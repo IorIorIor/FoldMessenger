@@ -59,8 +59,15 @@ Requires JDK 17 and the Android SDK (path in `local.properties`):
 ./gradlew assembleDebug
 ```
 
-Output: `app/build/outputs/apk/debug/app-debug.apk` (debug-signed — fine for sideloading,
-not for the Play Store).
+Output: `app/build/outputs/apk/debug/FoldMessenger-v<version>.apk` (debug-signed — fine
+for sideloading, not for the Play Store).
+
+**Versioning:** bump `versionCode` (integer, must always increase for in-place updates)
+and `versionName` (shown in the filename) in `app/build.gradle.kts`, then commit and tag:
+
+```bash
+git tag v<versionName>
+```
 
 ## Known limitations
 

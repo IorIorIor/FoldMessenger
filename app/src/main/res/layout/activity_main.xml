@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <!-- Viewer: layered background → media → text -->
+    <FrameLayout
+        android:id="@+id/viewer_group"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/bg_image"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:importantForAccessibility="no" />
+
+        <VideoView
+            android:id="@+id/media_video"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/media_image"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter"
+            android:visibility="gone"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:id="@+id/cover_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:fontFamily="@font/samsung_sharp_sans_bold"
+            android:gravity="center"
+            android:text="@string/cover_title"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/cover_title_size"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/center_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:fontFamily="@font/samsung_sharp_sans_bold"
+            android:gravity="center"
+            android:padding="@dimen/center_text_padding"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/center_text_size"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/message_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="#B3000000"
+            android:fontFamily="@font/samsung_sharp_sans_bold"
+            android:gravity="center"
+            android:padding="@dimen/message_text_padding"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/message_text_size"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <!-- First-run setup -->
+    <LinearLayout
+        android:id="@+id/setup_group"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="@string/setup_title"
+            android:textColor="@android:color/white"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <GridLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:columnCount="2">
+
+            <Button android:id="@+id/btn_phone_1" style="@style/PhoneButton" android:text="1" />
+            <Button android:id="@+id/btn_phone_2" style="@style/PhoneButton" android:text="2" />
+            <Button android:id="@+id/btn_phone_3" style="@style/PhoneButton" android:text="3" />
+            <Button android:id="@+id/btn_phone_4" style="@style/PhoneButton" android:text="4" />
+            <Button android:id="@+id/btn_phone_5" style="@style/PhoneButton" android:text="5" />
+            <Button android:id="@+id/btn_phone_6" style="@style/PhoneButton" android:text="6" />
+            <Button android:id="@+id/btn_phone_7" style="@style/PhoneButton" android:text="7" />
+            <Button android:id="@+id/btn_phone_8" style="@style/PhoneButton" android:text="8" />
+        </GridLayout>
+    </LinearLayout>
+</FrameLayout>

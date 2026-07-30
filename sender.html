@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fold Messenger — Sender</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #111; color: #eee; max-width: 560px; margin: 0 auto; padding: 24px 16px;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p.sub { color: #888; font-size: 13px; margin-bottom: 24px; }
+  fieldset { border: 1px solid #333; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+  legend { padding: 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #888; }
+  .phones { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .phones label, .all-label {
+    display: flex; align-items: center; gap: 6px; background: #1c1c1c;
+    border: 1px solid #333; border-radius: 6px; padding: 8px 10px; cursor: pointer;
+    font-size: 14px; user-select: none;
+  }
+  .phones label:has(input:checked), .all-label:has(input:checked) {
+    background: #2a3a2a; border-color: #4a8a4a;
+  }
+  .all-label { margin-bottom: 8px; }
+  textarea {
+    width: 100%; min-height: 80px; background: #1c1c1c; color: #eee;
+    border: 1px solid #333; border-radius: 6px; padding: 10px; font-size: 15px; resize: vertical;
+  }
+  input[type=file] { font-size: 13px; color: #aaa; }
+  #preview { max-width: 100%; max-height: 200px; margin-top: 10px; border-radius: 6px; display: none; }
+  button {
+    width: 100%; padding: 14px; font-size: 16px; font-weight: 600; border: 0;
+    border-radius: 8px; background: #fff; color: #111; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.secondary {
+    margin-top: 12px; background: transparent; color: #e77;
+    border: 1px solid #633; font-weight: 500;
+  }
+  #log { margin-top: 16px; font-size: 13px; line-height: 1.7; color: #aaa; white-space: pre-wrap; }
+  .ok { color: #7c7; } .err { color: #e77; }
+</style>
+</head>
+<body>
+<h1>📨 Fold Messenger</h1>
+<p class="sub">Send text + image to the Fold phones</p>
+
+<fieldset>
+  <legend>To</legend>
+  <label class="all-label"><input type="checkbox" id="all"> <strong>All phones</strong></label>
+  <div class="phones" id="phones"></div>
+</fieldset>
+
+<fieldset>
+  <legend>Message</legend>
+  <textarea id="text" placeholder="Type your message… (optional if sending an image)"></textarea>
+</fieldset>
+
+<fieldset>
+  <legend>Image / video</legend>
+  <input type="file" id="file" accept="image/*,video/*">
+  <img id="preview" alt="">
+  <video id="previewvid" controls muted style="max-width:100%;max-height:200px;margin-top:10px;border-radius:6px;display:none"></video>
+</fieldset>
+
+<button id="send">Send</button>
+<button id="nextround" class="secondary">⏭ Next round — clear all phones</button>
+<div id="log"></div>
+
+<script>
+// Must match Config.TOPIC_BASE in the Android app.
+const TOPIC_BASE = "fm-pw3h5q3z";
+const SERVER = "https://ntfy.sh";
+const PHONE_COUNT = 8;
+
+const phonesDiv = document.getElementById("phones");
+for (let i = 1; i <= PHONE_COUNT; i++) {
+  const label = document.createElement("label");
+  label.innerHTML = `<input type="checkbox" class="phone" value="${i}"> ${i}`;
+  phonesDiv.appendChild(label);
+}
+
+document.getElementById("all").addEventListener("change", (e) => {
+  document.querySelectorAll(".phone").forEach(cb => { cb.checked = false; cb.disabled = e.target.checked; });
+});
+
+const fileInput = document.getElementById("file");
+const preview = document.getElementById("preview");
+const previewVid = document.getElementById("previewvid");
+fileInput.addEventListener("change", () => {
+  const f = fileInput.files[0];
+  preview.style.display = "none";
+  previewVid.style.display = "none";
+  if (!f) return;
+  if (f.type.startsWith("video/")) {
+    previewVid.src = URL.createObjectURL(f);
+    previewVid.style.display = "block";
+  } else {
+    preview.src = URL.createObjectURL(f);
+    preview.style.display = "block";
+  }
+});
+
+// RFC 2047 encoding for non-ASCII header values (ntfy decodes these).
+// Chunk per 10 characters so each encoded-word stays short and never
+// splits a multi-byte character.
+function headerValue(text) {
+  const clean = text.replace(/[\r\n]+/g, " ").trim();
+  if (/^[\x20-\x7e]*$/.test(clean) && !clean.startsWith("=?")) return clean;
+  const words = [];
+  for (const chunk of clean.match(/.{1,10}/gs) || []) {
+    const bytes = new TextEncoder().encode(chunk);
+    words.push("=?UTF-8?B?" + btoa(String.fromCharCode(...bytes)) + "?=");
+  }
+  return words.join(" ");
+}
+
+function targets() {
+  if (document.getElementById("all").checked) return [{ label: "All phones", topic: `${TOPIC_BASE}-all` }];
+  return [...document.querySelectorAll(".phone:checked")]
+    .map(cb => ({ label: `Phone ${cb.value}`, topic: `${TOPIC_BASE}-p${cb.value}` }));
+}
+
+const log = document.getElementById("log");
+function addLog(msg, cls) {
+  const line = document.createElement("div");
+  line.textContent = msg;
+  if (cls) line.className = cls;
+  log.prepend(line);
+}
+
+document.getElementById("send").addEventListener("click", async () => {
+  const text = document.getElementById("text").value.trim();
+  const file = fileInput.files[0];
+  const to = targets();
+
+  if (to.length === 0) { addLog("⚠ Select at least one phone.", "err"); return; }
+  if (!text && !file) { addLog("⚠ Type a message or attach an image/video.", "err"); return; }
+  if (file && file.size > 15 * 1024 * 1024) {
+    addLog("⚠ File too large — max 15 MB (compress the video).", "err"); return;
+  }
+
+  const btn = document.getElementById("send");
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+
+  for (const t of to) {
+    try {
+      let res;
+      if (file) {
+        const headers = { "X-Filename": (file.name || "image").replace(/[^\x20-\x7e]/g, "_") };
+        if (text) headers["X-Message"] = headerValue(text);
+        res = await fetch(`${SERVER}/${t.topic}`, { method: "PUT", body: file, headers });
+      } else {
+        res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text });
+      }
+      if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
+      else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");
+    } catch (e) {
+      addLog(`✗ ${t.label} — ${e.message}`, "err");
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = "Send";
+});
+
+// Admin: wipe the current message on every phone; they all return to the idle image.
+// "__NEXTROUND__" is a control command understood by the app, not shown as a message.
+document.getElementById("nextround").addEventListener("click", async () => {
+  if (!confirm("Start the next round? This clears the message on ALL phones.")) return;
+  try {
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__NEXTROUND__" });
+    if (res.ok) addLog(`✓ Next round — all phones cleared ${new Date().toLocaleTimeString()}`, "ok");
+    else addLog(`✗ Next round — HTTP ${res.status}`, "err");
+  } catch (e) {
+    addLog(`✗ Next round — ${e.message}`, "err");
+  }
+});
+</script>
+</body>
+</html>

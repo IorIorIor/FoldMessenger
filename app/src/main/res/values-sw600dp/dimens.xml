@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Unfolded inner screen -->
+    <dimen name="cover_title_size">72sp</dimen>
+    <dimen name="center_text_size">44sp</dimen>
+    <dimen name="center_text_padding">48dp</dimen>
+    <dimen name="message_text_size">26sp</dimen>
+    <dimen name="message_text_padding">28dp</dimen>
+    <dimen name="phone_button_size">96dp</dimen>
+</resources>

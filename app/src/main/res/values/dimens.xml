@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Cover screen (default) -->
+    <dimen name="cover_title_size">40sp</dimen>
+    <dimen name="center_text_size">22sp</dimen>
+    <dimen name="center_text_padding">24dp</dimen>
+    <dimen name="message_text_size">15sp</dimen>
+    <dimen name="message_text_padding">12dp</dimen>
+    <dimen name="phone_button_size">64dp</dimen>
+</resources>

@@ -13,7 +13,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.media.MediaPlayer
+import android.media.AudioAttributes
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -45,7 +46,7 @@ class PushService : Service() {
         private const val TAG = "PushService"
         private const val CHANNEL_SERVICE = "service"
         // v2: silent channel — the alert sound is played by the app itself
-        private const val CHANNEL_MESSAGES = "messages_v2"
+        private const val CHANNEL_MESSAGES = "messages_v3"
         private const val NOTIF_ID_SERVICE = 1
         const val NOTIF_ID_MESSAGE = 2
 
@@ -63,7 +64,6 @@ class PushService : Service() {
     private var connectedPhoneId = 0
     private var reconnectDelayMs = 5_000L
     private var destroyed = false
-    private var alertPlayer: MediaPlayer? = null
 
     private val client = OkHttpClient.Builder()
         .pingInterval(30, TimeUnit.SECONDS)
@@ -95,7 +95,6 @@ class PushService : Service() {
         destroyed = true
         webSocket?.cancel()
         executor.shutdown()
-        alertPlayer?.release()
         super.onDestroy()
     }
 
@@ -167,10 +166,16 @@ class PushService : Service() {
             mediaPath = downloadAttachment(attachmentUrl)
         }
         val name = attachment?.optString("name") ?: ""
-        // ntfy auto-fills `message` when there is an attachment and no explicit
-        // message ("clip.mp4" or "You received a file: clip.mp4"); don't show that
-        val displayText = if (mediaPath != null &&
-            (text == name || text == "You received a file: $name")
+        // ntfy sometimes auto-fills `message` when there is an attachment and no
+        // explicit user-entered text (e.g. "clip.mp4" or "You received a file: clip.mp4").
+        // If the message appears to be an auto-filled filename/placeholder or is blank,
+        // treat it as empty so nothing is shown on the phone when only an asset is sent.
+        val displayText = if (mediaPath != null && (
+                text.isBlank() ||
+                text == name ||
+                text == "You received a file: $name" ||
+                text.startsWith("You received a file:")
+            )
         ) "" else text
 
         var mime = attachment?.optString("type") ?: ""
@@ -184,25 +189,9 @@ class PushService : Service() {
         MessageStore.saveMessage(this, displayText, mediaPath, mime)
         launchViewer()
         postMessageNotification()
-        playAlert()
     }
 
-    private fun playAlert() {
-        handler.post {
-            try {
-                alertPlayer?.release()
-                alertPlayer = MediaPlayer.create(this, R.raw.alert)?.apply {
-                    setOnCompletionListener { mp ->
-                        mp.release()
-                        if (alertPlayer == mp) alertPlayer = null
-                    }
-                    start()
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Alert sound failed: ${e.message}")
-            }
-        }
-    }
+    // Audio is handled by the NotificationChannel directly (no MediaPlayer).
 
     /**
      * Bring MainActivity to the front on whatever display is active (cover screen
@@ -255,6 +244,8 @@ class PushService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val soundUri = Uri.parse("android.resource://$packageName/${R.raw.alert}")
+
         val builder = NotificationCompat.Builder(this, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_MAX)
@@ -265,6 +256,8 @@ class PushService : Service() {
             // Full-screen intent: launches MainActivity on the active display,
             // cover screen included
             .setFullScreenIntent(contentIntent, true)
+            // Ensure the builder also references the sound for older platforms
+            .setSound(soundUri)
 
         teaserBitmap()?.let { teaser ->
             builder.setStyle(
@@ -331,6 +324,13 @@ class PushService : Service() {
                 NotificationManager.IMPORTANCE_MIN
             )
         )
+        // Notification channel with bundled custom sound so the OS plays it reliably.
+        val soundUri = Uri.parse("android.resource://$packageName/${R.raw.alert}")
+        val audioAttrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
         nm.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_MESSAGES,
@@ -339,7 +339,7 @@ class PushService : Service() {
             ).apply {
                 enableVibration(true)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                setSound(null, null) // the service plays the bundled alert itself
+                setSound(soundUri, audioAttrs)
             }
         )
     }

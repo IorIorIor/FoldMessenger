@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -11,12 +12,15 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.VideoView
+import kotlin.math.roundToInt
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.view.WindowCompat
@@ -46,6 +50,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        // Lock orientation to portrait for a consistent UI
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
@@ -151,8 +157,22 @@ class MainActivity : AppCompatActivity() {
         bgImage.setImageResource(R.drawable.img_idle)
         mediaImage.visibility = View.GONE
         coverTitle.visibility = View.GONE
-        centerText.visibility = View.GONE
         messageText.visibility = View.GONE
+        centerText.setTextColor(android.graphics.Color.WHITE)
+        centerText.textSize = 28f
+        centerText.setPadding(0, 0, 0, (16 * resources.displayMetrics.density).roundToInt())
+        val lp = centerText.layoutParams as FrameLayout.LayoutParams
+        lp.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        lp.bottomMargin = (24 * resources.displayMetrics.density).roundToInt()
+        centerText.layoutParams = lp
+        // Display the allocated phone number prominently on the idle screen
+        val phoneId = MessageStore.getPhoneId(this)
+        if (phoneId > 0) {
+            centerText.text = "Phone $phoneId"
+            centerText.visibility = View.VISIBLE
+        } else {
+            centerText.visibility = View.GONE
+        }
     }
 
     private fun showTeaser() {
@@ -163,7 +183,16 @@ class MainActivity : AppCompatActivity() {
         messageText.visibility = View.GONE
     }
 
+    private fun resetCenterTextPosition() {
+        val lp = centerText.layoutParams as FrameLayout.LayoutParams
+        lp.gravity = Gravity.CENTER
+        lp.bottomMargin = 0
+        centerText.layoutParams = lp
+        centerText.setPadding(0, 0, 0, 0)
+    }
+
     private fun showMessage(message: MessageStore.Message) {
+        resetCenterTextPosition()
         bgImage.setImageResource(R.drawable.bg_main)
         coverTitle.visibility = View.GONE
 

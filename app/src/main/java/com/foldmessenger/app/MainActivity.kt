@@ -43,16 +43,16 @@ import androidx.core.view.WindowInsetsControllerCompat
  * the message viewer. Launched directly by PushService (or via the notification's
  * full-screen intent) so it appears on whichever display is active.
  *
- * States: idle (baked idle image + phone number) → teaser on the cover screen
- * ("New Secret!" on the baked cover background) → reveal on the unfolded screen
- * (a centred card holding the media and/or text, with the roster avatar and name
- * along the bottom) → fold closed wipes the message.
+ * States: idle (phone number) → teaser on the cover screen ("New Secret!") →
+ * reveal on the unfolded screen (a centred card holding the media and/or text,
+ * with the roster avatar and name along the bottom) → fold closed wipes the
+ * message. Each drives a matching state on the live FxBackground behind it.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var setupGroup: View
     private lateinit var viewerGroup: View
-    private lateinit var bgImage: ImageView
+    private lateinit var fx: FxBackground
     private lateinit var cardContainer: LinearLayout
     private lateinit var mediaBlock: View
     private lateinit var mediaImage: ImageView
@@ -100,7 +100,7 @@ class MainActivity : AppCompatActivity() {
 
         setupGroup = findViewById(R.id.setup_group)
         viewerGroup = findViewById(R.id.viewer_group)
-        bgImage = findViewById(R.id.bg_image)
+        fx = FxBackground(findViewById(R.id.fx_background))
         cardContainer = findViewById(R.id.card_container)
         mediaBlock = findViewById(R.id.media_block)
         mediaImage = findViewById(R.id.media_image)
@@ -149,6 +149,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        fx.resume()
         MessageStore.onMessageChanged = { render() }
         render()
         if (MessageStore.getPhoneId(this) > 0) {
@@ -160,6 +161,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         MessageStore.onMessageChanged = null
         releasePlayer()
+        fx.pause()
         super.onPause()
     }
 
@@ -210,7 +212,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showIdle(phoneId: Int) {
-        bgImage.setImageResource(R.drawable.img_idle)
+        fx.show(FxBackground.IDLE)
         cardContainer.visibility = View.GONE
         coverTitle.visibility = View.GONE
         // the allocated phone number, so the crew can tell the handsets apart
@@ -219,20 +221,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTeaser() {
-        bgImage.setImageResource(R.drawable.bg_cover)
+        fx.show(FxBackground.NEW_REVEAL)
         cardContainer.visibility = View.GONE
         idleLabel.visibility = View.GONE
         coverTitle.visibility = View.VISIBLE
     }
 
     private fun showMessage(message: MessageStore.Message) {
-        bgImage.setImageResource(R.drawable.bg_main)
         coverTitle.visibility = View.GONE
         idleLabel.visibility = View.GONE
 
         val person = Roster.byId(this, message.personId)
         val hasMedia = message.mediaPath != null
         val hasCaption = message.text.isNotEmpty()
+        // a photo/clip gets the wider sliced aura; a text-only secret its own state
+        fx.show(if (hasMedia) FxBackground.MEDIA_MESSAGE else FxBackground.TEXT_MESSAGE)
         val pad = resources.getDimensionPixelSize(R.dimen.card_padding)
         val screenH = resources.displayMetrics.heightPixels
 

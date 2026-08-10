@@ -16,6 +16,7 @@ object MessageStore {
     private const val KEY_IMAGE = "last_image_path"
     private const val KEY_TIME = "last_time"
     private const val KEY_MIME = "last_mime"
+    private const val KEY_PERSON = "last_person"
     private const val KEY_VIEWED = "viewed"
 
     @Volatile
@@ -25,6 +26,8 @@ object MessageStore {
         val text: String,
         val mediaPath: String?,
         val mime: String,
+        /** Position in the baked-in roster; 0 when the sender named nobody. */
+        val personId: Int,
         val timeMillis: Long
     )
 
@@ -45,15 +48,17 @@ object MessageStore {
             text = p.getString(KEY_TEXT, "") ?: "",
             mediaPath = p.getString(KEY_IMAGE, null),
             mime = p.getString(KEY_MIME, "") ?: "",
+            personId = p.getInt(KEY_PERSON, 0),
             timeMillis = time
         )
     }
 
-    fun saveMessage(ctx: Context, text: String, mediaPath: String?, mime: String) {
+    fun saveMessage(ctx: Context, text: String, mediaPath: String?, mime: String, personId: Int) {
         prefs(ctx).edit()
             .putString(KEY_TEXT, text)
             .putString(KEY_IMAGE, mediaPath)
             .putString(KEY_MIME, mime)
+            .putInt(KEY_PERSON, personId)
             .putLong(KEY_TIME, System.currentTimeMillis())
             .putBoolean(KEY_VIEWED, false)
             .apply()
@@ -74,6 +79,7 @@ object MessageStore {
             .remove(KEY_TEXT)
             .remove(KEY_IMAGE)
             .remove(KEY_MIME)
+            .remove(KEY_PERSON)
             .remove(KEY_TIME)
             .remove(KEY_VIEWED)
             .apply()

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The cast of people a secret can be attributed to. Position in this list is the
+  person id: the first name is id 1 and uses avatar_1.png, and so on.
+  Keep this in sync with the ROSTER array in sender.html.
+-->
+<resources>
+    <string-array name="roster_names">
+        <item>Charlotte</item>
+        <item>Daan</item>
+        <item>Emma</item>
+        <item>Lucas</item>
+        <item>Sofie</item>
+        <item>Milan</item>
+        <item>Nora</item>
+        <item>Tim</item>
+    </string-array>
+</resources>

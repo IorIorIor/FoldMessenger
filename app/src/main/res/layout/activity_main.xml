@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <!-- Viewer: layered background → media → text -->
+    <!-- Viewer: background → centred message card → teaser/idle overlays -->
     <FrameLayout
         android:id="@+id/viewer_group"
         android:layout_width="match_parent"
@@ -18,21 +18,116 @@
             android:scaleType="centerCrop"
             android:importantForAccessibility="no" />
 
-        <VideoView
-            android:id="@+id/media_video"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
+        <!-- The message card. Width/height wrap the content, so the box grows
+             with the message; max sizes are applied in MainActivity. -->
+        <LinearLayout
+            android:id="@+id/card_container"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:visibility="gone" />
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:visibility="gone">
 
-        <ImageView
-            android:id="@+id/media_image"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="fitCenter"
-            android:visibility="gone"
-            android:importantForAccessibility="no" />
+            <!-- media (image or video) with the byline overlaid at the bottom -->
+            <FrameLayout
+                android:id="@+id/media_block"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:visibility="gone">
 
+                <!-- media_block is given its exact size in code (sizeMediaBlock),
+                     so these can safely fill it -->
+                <ImageView
+                    android:id="@+id/media_image"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="fitCenter"
+                    android:visibility="gone"
+                    android:importantForAccessibility="no" />
+
+                <TextureView
+                    android:id="@+id/media_video"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:visibility="gone" />
+
+                <View
+                    android:id="@+id/media_scrim"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/scrim_height"
+                    android:layout_gravity="bottom"
+                    android:background="@drawable/scrim_bottom" />
+
+                <LinearLayout
+                    android:id="@+id/byline_media"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|start"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="@dimen/card_padding">
+
+                    <ImageView
+                        android:id="@+id/byline_media_avatar"
+                        android:layout_width="@dimen/avatar_size"
+                        android:layout_height="@dimen/avatar_size"
+                        android:importantForAccessibility="no" />
+
+                    <TextView
+                        android:id="@+id/byline_media_name"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/byline_gap"
+                        android:fontFamily="@font/apris_black"
+                        android:textColor="@android:color/white"
+                        android:textSize="@dimen/name_text_size" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <!-- message text: the whole card for a text-only secret, or a caption
+                 under the media when both were sent -->
+            <TextView
+                android:id="@+id/card_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/samsung_sharp_sans_bold"
+                android:lineSpacingMultiplier="1.15"
+                android:paddingHorizontal="@dimen/card_padding"
+                android:paddingTop="@dimen/card_padding"
+                android:textColor="@android:color/white"
+                android:textSize="@dimen/card_text_size"
+                android:visibility="gone" />
+
+            <!-- byline for the text card (media cards use the overlaid one above) -->
+            <LinearLayout
+                android:id="@+id/byline_card"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="@dimen/card_padding"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/byline_card_avatar"
+                    android:layout_width="@dimen/avatar_size"
+                    android:layout_height="@dimen/avatar_size"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/byline_card_name"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/byline_gap"
+                    android:fontFamily="@font/apris_black"
+                    android:textColor="@android:color/white"
+                    android:textSize="@dimen/name_text_size" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- "New Secret!" teaser on the cover screen -->
         <TextView
             android:id="@+id/cover_title"
             android:layout_width="match_parent"
@@ -45,29 +140,17 @@
             android:textSize="@dimen/cover_title_size"
             android:visibility="gone" />
 
+        <!-- allocated phone number, shown on the idle screen -->
         <TextView
-            android:id="@+id/center_text"
+            android:id="@+id/idle_label"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="@dimen/idle_label_margin"
             android:fontFamily="@font/samsung_sharp_sans_bold"
             android:gravity="center"
-            android:padding="@dimen/center_text_padding"
             android:textColor="@android:color/white"
-            android:textSize="@dimen/center_text_size"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/message_text"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="#B3000000"
-            android:fontFamily="@font/samsung_sharp_sans_bold"
-            android:gravity="center"
-            android:padding="@dimen/message_text_padding"
-            android:textColor="@android:color/white"
-            android:textSize="@dimen/message_text_size"
+            android:textSize="@dimen/idle_label_size"
             android:visibility="gone" />
     </FrameLayout>
 

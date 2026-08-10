@@ -14,6 +14,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -64,6 +65,7 @@ class PushService : Service() {
     private var connectedPhoneId = 0
     private var reconnectDelayMs = 5_000L
     private var destroyed = false
+    private var alertPlayer: MediaPlayer? = null
 
     private val client = OkHttpClient.Builder()
         .pingInterval(30, TimeUnit.SECONDS)
@@ -95,6 +97,8 @@ class PushService : Service() {
         destroyed = true
         webSocket?.cancel()
         executor.shutdown()
+        alertPlayer?.release()
+        alertPlayer = null
         super.onDestroy()
     }
 
@@ -186,9 +190,16 @@ class PushService : Service() {
             mime = "video/mp4"
         }
 
-        MessageStore.saveMessage(this, displayText, mediaPath, mime)
-        launchViewer()
-        postMessageNotification()
+        // The sender puts the roster position in ntfy's title field as "p<id>".
+        val personId = Regex("^p(\\d+)$")
+            .find(obj.optString("title", "").trim())
+            ?.groupValues?.get(1)?.toIntOrNull() ?: 0
+
+        MessageStore.saveMessage(this, displayText, mediaPath, mime, personId)
+        // When the viewer takes over the screen itself there is nothing for a
+        // notification to do, and its heads-up banner would sit right on top of
+        // the reveal — so in that case just play the alert.
+        if (launchViewer()) playAlert() else postMessageNotification()
     }
 
     // Audio is handled by the NotificationChannel directly (no MediaPlayer).
@@ -199,15 +210,35 @@ class PushService : Service() {
      * top" (SYSTEM_ALERT_WINDOW) permission; without it the full-screen-intent
      * notification is the fallback.
      */
-    private fun launchViewer() {
-        if (!Settings.canDrawOverlays(this)) return
-        try {
+    private fun launchViewer(): Boolean {
+        if (!Settings.canDrawOverlays(this)) return false
+        return try {
             startActivity(
                 Intent(this, MainActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
+            true
         } catch (e: Exception) {
             Log.w(TAG, "Direct viewer launch failed: ${e.message}")
+            false
+        }
+    }
+
+    /** The Samsung whistle, for when no notification is posted to carry it. */
+    private fun playAlert() {
+        handler.post {
+            try {
+                alertPlayer?.release()
+                alertPlayer = MediaPlayer.create(this, R.raw.alert)?.apply {
+                    setOnCompletionListener { mp ->
+                        mp.release()
+                        if (alertPlayer == mp) alertPlayer = null
+                    }
+                    start()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Alert sound failed: ${e.message}")
+            }
         }
     }
 

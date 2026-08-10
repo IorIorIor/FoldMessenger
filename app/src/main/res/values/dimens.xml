@@ -2,9 +2,14 @@
 <resources>
     <!-- Cover screen (default) -->
     <dimen name="cover_title_size">40sp</dimen>
-    <dimen name="center_text_size">22sp</dimen>
-    <dimen name="center_text_padding">24dp</dimen>
-    <dimen name="message_text_size">15sp</dimen>
-    <dimen name="message_text_padding">12dp</dimen>
+    <dimen name="card_text_size">17sp</dimen>
+    <dimen name="name_text_size">15sp</dimen>
+    <dimen name="card_padding">16dp</dimen>
+    <dimen name="card_corner_radius">20dp</dimen>
+    <dimen name="avatar_size">36dp</dimen>
+    <dimen name="byline_gap">10dp</dimen>
+    <dimen name="scrim_height">96dp</dimen>
+    <dimen name="idle_label_size">18sp</dimen>
+    <dimen name="idle_label_margin">28dp</dimen>
     <dimen name="phone_button_size">64dp</dimen>
 </resources>

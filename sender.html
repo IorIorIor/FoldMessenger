@@ -50,6 +50,10 @@
     border-radius: 8px; background: #fff; color: #111; cursor: pointer;
   }
   button:disabled { opacity: 0.5; cursor: default; }
+  button.linkbtn {
+    width: auto; margin-top: 10px; padding: 6px 10px; font-size: 13px; font-weight: 500;
+    background: transparent; color: #e77; border: 1px solid #633; border-radius: 6px;
+  }
   button.secondary {
     margin-top: 12px; background: transparent; color: #e77;
     border: 1px solid #633; font-weight: 500;
@@ -83,6 +87,7 @@
 <fieldset>
   <legend>Image / video</legend>
   <input type="file" id="file" accept="image/*,video/*">
+  <button type="button" id="clearfile" class="linkbtn" hidden>✕ Remove file</button>
   <label class="inline" for="imageCompression">
     <span>Image compression</span>
     <select id="imageCompression">
@@ -104,7 +109,7 @@
 // Must match Config.TOPIC_BASE in the Android app.
 const TOPIC_BASE = "fm-pw3h5q3z";
 const SERVER = "https://ntfy.sh";
-const PHONE_COUNT = 8;
+const PHONE_COUNT = 6;   // keep in sync with Config.PHONE_COUNT in the app
 
 // The cast of people, in the same order as roster_names in the app's
 // res/values/roster.xml — position in this list is the id that gets sent.
@@ -149,10 +154,13 @@ updateSelectionStyles();
 const fileInput = document.getElementById("file");
 const preview = document.getElementById("preview");
 const previewVid = document.getElementById("previewvid");
-fileInput.addEventListener("change", () => {
-  const f = fileInput.files[0];
+const clearFileBtn = document.getElementById("clearfile");
+
+function showFile(f) {
   preview.style.display = "none";
   previewVid.style.display = "none";
+  previewVid.pause();
+  clearFileBtn.hidden = !f;
   if (!f) {
     setFileInfo(null);
     return;
@@ -165,6 +173,17 @@ fileInput.addEventListener("change", () => {
     preview.style.display = "block";
   }
   setFileInfo(f);
+}
+
+fileInput.addEventListener("change", () => showFile(fileInput.files[0]));
+
+// Drop the attachment so a text-only secret can be sent without reloading.
+clearFileBtn.addEventListener("click", () => {
+  fileInput.value = "";
+  preview.removeAttribute("src");
+  previewVid.removeAttribute("src");
+  showFile(null);
+  addLog("Attachment removed.", "ok");
 });
 
 // RFC 2047 encoding for non-ASCII header values (ntfy decodes these).

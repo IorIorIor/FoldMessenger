@@ -18,6 +18,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.text.StaticLayout
+import android.text.TextPaint
 import android.util.Log
 import android.util.TypedValue
 import android.view.Surface
@@ -27,6 +28,7 @@ import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -73,12 +75,16 @@ class MainActivity : AppCompatActivity() {
 
     // Card sizing bounds, derived from the display the activity is currently on.
     private val maxCardWidth: Int
-        get() = (resources.displayMetrics.widthPixels * 0.72f).toInt()
+        get() = (resources.displayMetrics.widthPixels * 0.88f).toInt()
     private val maxMediaWidth: Int
-        get() = (resources.displayMetrics.widthPixels * 0.55f).toInt()
+        get() = (resources.displayMetrics.widthPixels * 0.80f).toInt()
 
     /** Height budget for the media, set per message before showMedia() runs. */
     private var maxMediaHeight = 0
+
+    /** Intrinsic size of the current photo/clip, for re-fitting after a re-budget. */
+    private var mediaNaturalWidth = 0
+    private var mediaNaturalHeight = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -171,17 +177,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindSetupButtons() {
-        val ids = listOf(
-            R.id.btn_phone_1, R.id.btn_phone_2, R.id.btn_phone_3, R.id.btn_phone_4,
-            R.id.btn_phone_5, R.id.btn_phone_6, R.id.btn_phone_7, R.id.btn_phone_8
-        )
-        ids.forEachIndexed { index, resId ->
-            findViewById<Button>(resId).setOnClickListener {
-                MessageStore.setPhoneId(this, index + 1)
+        val grid = findViewById<GridLayout>(R.id.phone_grid)
+        grid.removeAllViews()
+        for (phoneId in 1..Config.PHONE_COUNT) {
+            val button = layoutInflater
+                .inflate(R.layout.view_phone_button, grid, false) as Button
+            button.text = phoneId.toString()
+            button.setOnClickListener {
+                MessageStore.setPhoneId(this, phoneId)
                 PushService.start(this)
                 maybePromptSpecialAccess()
                 render()
             }
+            grid.addView(button)
         }
     }
 
@@ -239,30 +247,22 @@ class MainActivity : AppCompatActivity() {
         val pad = resources.getDimensionPixelSize(R.dimen.card_padding)
         val screenH = resources.displayMetrics.heightPixels
 
-        // The media gets whatever height the caption leaves over, so the whole
-        // card always fits on screen.
-        maxMediaHeight = if (hasCaption) {
-            (screenH * 0.88f).toInt() - measureCaptionHeight(message.text) - 2 * pad
-        } else {
-            (screenH * 0.78f).toInt()
-        }.coerceAtLeast((screenH * 0.25f).toInt())
-
-        if (hasMedia) {
-            showMedia(message.mediaPath!!, message.mime)
-            // the byline sits over the bottom of the photo, as in the design
-            bindByline(person, bylineMedia, bylineMediaAvatar, bylineMediaName)
-            mediaScrim.visibility = if (person != null) View.VISIBLE else View.GONE
-            bylineCard.visibility = View.GONE
-        } else {
-            mediaBlock.visibility = View.GONE
-            // …and under the text when there is no photo to sit on
-            bindByline(person, bylineCard, bylineCardAvatar, bylineCardName)
-        }
-
-        // Text is the whole card on its own, or an optional caption under the media.
+        // Text first: it is the whole card on its own, and a caption under the
+        // media otherwise. sizeMediaBlock() narrows it to the photo's width once
+        // that is known, so the card ends up hugging the media.
         if (hasCaption) {
-            // Under media the caption spans the full card width (media centres
-            // above it); on its own it wraps to hug its own lines.
+            // Start at the full display size and step down only as far as the
+            // text needs, so short secrets stay big and long ones still fit
+            // without eating the byline's room.
+            val textWidth = maxCardWidth - 2 * pad
+            val textBudget = if (hasMedia) {
+                (screenH * 0.40f).toInt()
+            } else {
+                (screenH * 0.86f).toInt() - bylineHeight() - 2 * pad
+            }
+            cardText.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX, fitTextSize(message.text, textWidth, textBudget)
+            )
             cardText.layoutParams = cardText.layoutParams.apply {
                 width = if (hasMedia) maxCardWidth else ViewGroup.LayoutParams.WRAP_CONTENT
             }
@@ -276,16 +276,73 @@ class MainActivity : AppCompatActivity() {
             cardText.visibility = View.GONE
         }
 
+        // The media gets whatever height the caption leaves over, so the whole
+        // card always fits on screen.
+        maxMediaHeight = mediaHeightBudget(message.text, hasCaption, maxCardWidth)
+
+        if (hasMedia) {
+            showMedia(message.mediaPath!!, message.mime)
+            // the byline sits over the bottom of the photo, as in the design
+            bindByline(person, bylineMedia, bylineMediaAvatar, bylineMediaName)
+            mediaScrim.visibility = if (person != null) View.VISIBLE else View.GONE
+            bylineCard.visibility = View.GONE
+        } else {
+            mediaBlock.visibility = View.GONE
+            // …and under the text when there is no photo to sit on
+            bindByline(person, bylineCard, bylineCardAvatar, bylineCardName)
+        }
+
         cardContainer.visibility = View.VISIBLE
         MessageStore.markViewed(this)
         getSystemService(NotificationManager::class.java)
             .cancel(PushService.NOTIF_ID_MESSAGE)
     }
 
-    /** Height the caption will take at full card width, measured with its own paint. */
-    private fun measureCaptionHeight(text: String): Int {
+    /** Room the avatar + name row needs under a text-only secret. */
+    private fun bylineHeight(): Int =
+        resources.getDimensionPixelSize(R.dimen.avatar_size) +
+            2 * resources.getDimensionPixelSize(R.dimen.card_padding)
+
+    /**
+     * Largest type size (in px, capped at card_text_size) at which the text still
+     * fits the given box. Steps down in 5% increments rather than binary-searching
+     * because the range is small and this keeps the sizes predictable.
+     */
+    private fun fitTextSize(text: String, width: Int, maxHeight: Int): Float {
+        val maxSize = resources.getDimension(R.dimen.card_text_size)
+        val minSize = maxSize * 0.35f
+        val step = maxSize * 0.05f
+        val paint = TextPaint(cardText.paint)
+        var size = maxSize
+        while (size > minSize) {
+            paint.textSize = size
+            val height = StaticLayout.Builder
+                .obtain(text, 0, text.length, paint, width.coerceAtLeast(1))
+                .setLineSpacing(0f, 1.15f)
+                .build()
+                .height
+            if (height <= maxHeight) break
+            size -= step
+        }
+        return size
+    }
+
+    /** Screen height left for the media once the caption has taken its share. */
+    private fun mediaHeightBudget(text: String, hasCaption: Boolean, captionWidth: Int): Int {
         val pad = resources.getDimensionPixelSize(R.dimen.card_padding)
-        val width = (maxCardWidth - 2 * pad).coerceAtLeast(1)
+        val screenH = resources.displayMetrics.heightPixels
+        val budget = if (hasCaption) {
+            (screenH * 0.92f).toInt() - measureCaptionHeight(text, captionWidth) - 2 * pad
+        } else {
+            (screenH * 0.88f).toInt()
+        }
+        return budget.coerceAtLeast((screenH * 0.25f).toInt())
+    }
+
+    /** Height the caption will take at the given card width, using its own paint. */
+    private fun measureCaptionHeight(text: String, cardWidth: Int): Int {
+        val pad = resources.getDimensionPixelSize(R.dimen.card_padding)
+        val width = (cardWidth - 2 * pad).coerceAtLeast(1)
         return StaticLayout.Builder
             .obtain(text, 0, text.length, cardText.paint, width)
             .setLineSpacing(0f, 1.15f)
@@ -302,6 +359,8 @@ class MainActivity : AppCompatActivity() {
             mediaVideo.visibility = View.GONE
             val bitmap = decodeScaled(path, maxMediaWidth, maxMediaHeight)
             if (bitmap != null) {
+                mediaNaturalWidth = bitmap.width
+                mediaNaturalHeight = bitmap.height
                 sizeMediaBlock(bitmap.width, bitmap.height)
                 mediaImage.setImageBitmap(bitmap)
                 mediaImage.visibility = View.VISIBLE

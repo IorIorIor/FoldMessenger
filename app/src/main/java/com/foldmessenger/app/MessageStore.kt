@@ -18,6 +18,8 @@ object MessageStore {
     private const val KEY_MIME = "last_mime"
     private const val KEY_PERSON = "last_person"
     private const val KEY_VIEWED = "viewed"
+    private const val KEY_LAST_EVENT = "last_event_id"
+    private const val KEY_LAST_EVENT_TIME = "last_event_time"
 
     @Volatile
     var onMessageChanged: (() -> Unit)? = null
@@ -35,6 +37,24 @@ object MessageStore {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun getPhoneId(ctx: Context): Int = prefs(ctx).getInt(KEY_PHONE_ID, 0)
+
+    /**
+     * Where this phone got to in the topic, so a reconnect can ask for anything
+     * published while the socket was down. The timestamp drives ntfy's `since`
+     * (its id-based form is accepted but backfills nothing on ntfy.sh); the id
+     * is kept alongside so the message we already showed isn't replayed.
+     */
+    fun getLastEventId(ctx: Context): String? = prefs(ctx).getString(KEY_LAST_EVENT, null)
+
+    /** Publish time in Unix seconds of the last event seen, or 0. */
+    fun getLastEventTime(ctx: Context): Long = prefs(ctx).getLong(KEY_LAST_EVENT_TIME, 0L)
+
+    fun setLastEvent(ctx: Context, id: String, timeSeconds: Long) {
+        prefs(ctx).edit()
+            .putString(KEY_LAST_EVENT, id)
+            .putLong(KEY_LAST_EVENT_TIME, timeSeconds)
+            .apply()
+    }
 
     fun setPhoneId(ctx: Context, id: Int) {
         prefs(ctx).edit().putInt(KEY_PHONE_ID, id).apply()

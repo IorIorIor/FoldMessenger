@@ -54,6 +54,9 @@ class PushService : Service() {
         /** Admin control message (sent by sender.html "Next round"): wipe all phones. */
         const val CMD_NEXT_ROUND = "__NEXTROUND__"
 
+        /** Catch-up messages older than this are ignored (previous round). */
+        private const val STALE_MESSAGE_SECONDS = 15 * 60
+
         fun start(ctx: Context) {
             ctx.startForegroundService(Intent(ctx, PushService::class.java))
         }
@@ -143,7 +146,11 @@ class PushService : Service() {
     private fun connect(phoneId: Int) {
         connectedPhoneId = phoneId
         val topics = "${Config.phoneTopic(phoneId)},${Config.allTopic()}"
-        val url = "${Config.NTFY_SERVER}/$topics/ws"
+        // Resume from the last event we saw: the socket drops regularly (Wi-Fi
+        // hiccups, doze), and without this anything published while it was down
+        // would never arrive.
+        val since = MessageStore.getLastEventTime(this)
+        val url = "${Config.NTFY_SERVER}/$topics/ws" + if (since > 0) "?since=$since" else ""
         Log.i(TAG, "Connecting to $url")
         val request = Request.Builder().url(url).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
@@ -183,6 +190,23 @@ class PushService : Service() {
             return
         }
         if (obj.optString("event") != "message") return
+
+        // `since` is second-granular, so the catch-up can hand back the message
+        // we already showed — skip it rather than replaying the reveal.
+        val eventId = obj.optString("id")
+        if (eventId.isNotEmpty() && eventId == MessageStore.getLastEventId(this)) return
+
+        val publishedAt = obj.optLong("time", 0L)
+        // Remember where we got to before anything else can return early.
+        if (eventId.isNotEmpty()) MessageStore.setLastEvent(this, eventId, publishedAt)
+
+        // A catch-up burst after a long outage shouldn't resurrect an old round.
+        if (publishedAt > 0 &&
+            System.currentTimeMillis() / 1000 - publishedAt > STALE_MESSAGE_SECONDS
+        ) {
+            Log.i(TAG, "Skipping stale message from ${System.currentTimeMillis() / 1000 - publishedAt}s ago")
+            return
+        }
 
         val text = obj.optString("message", "")
         val attachment = obj.optJSONObject("attachment")

@@ -68,12 +68,12 @@
                     android:layout_gravity="bottom|start"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:padding="@dimen/card_padding">
+                    android:padding="@dimen/byline_media_padding">
 
                     <ImageView
                         android:id="@+id/byline_media_avatar"
-                        android:layout_width="@dimen/avatar_size"
-                        android:layout_height="@dimen/avatar_size"
+                        android:layout_width="@dimen/avatar_size_media"
+                        android:layout_height="@dimen/avatar_size_media"
                         android:importantForAccessibility="no" />
 
                     <TextView
@@ -81,9 +81,11 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="@dimen/byline_gap"
+                        android:ellipsize="end"
                         android:fontFamily="@font/apris_black"
+                        android:maxLines="1"
                         android:textColor="@android:color/white"
-                        android:textSize="@dimen/name_text_size" />
+                        android:textSize="@dimen/name_text_size_media" />
                 </LinearLayout>
             </FrameLayout>
 
@@ -93,7 +95,9 @@
                 android:id="@+id/card_text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:breakStrategy="simple"
                 android:fontFamily="@font/samsung_sharp_sans_bold"
+                android:hyphenationFrequency="none"
                 android:lineSpacingMultiplier="1.15"
                 android:paddingHorizontal="@dimen/card_padding"
                 android:paddingTop="@dimen/card_padding"
@@ -141,15 +145,16 @@
             android:textSize="@dimen/cover_title_size"
             android:visibility="gone" />
 
-        <!-- allocated phone number, shown on the idle screen -->
+        <!-- allocated phone number, tucked into the bottom-left of the idle screen -->
         <TextView
             android:id="@+id/idle_label"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom|center_horizontal"
+            android:layout_gravity="bottom|start"
+            android:layout_marginStart="@dimen/idle_label_margin"
             android:layout_marginBottom="@dimen/idle_label_margin"
+            android:alpha="0.6"
             android:fontFamily="@font/samsung_sharp_sans_bold"
-            android:gravity="center"
             android:textColor="@android:color/white"
             android:textSize="@dimen/idle_label_size"
             android:visibility="gone" />
@@ -173,19 +178,11 @@
             android:textSize="18sp"
             android:textStyle="bold" />
 
+        <!-- filled in from Config.PHONE_COUNT by MainActivity.bindSetupButtons() -->
         <GridLayout
+            android:id="@+id/phone_grid"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:columnCount="2">
-
-            <Button android:id="@+id/btn_phone_1" style="@style/PhoneButton" android:text="1" />
-            <Button android:id="@+id/btn_phone_2" style="@style/PhoneButton" android:text="2" />
-            <Button android:id="@+id/btn_phone_3" style="@style/PhoneButton" android:text="3" />
-            <Button android:id="@+id/btn_phone_4" style="@style/PhoneButton" android:text="4" />
-            <Button android:id="@+id/btn_phone_5" style="@style/PhoneButton" android:text="5" />
-            <Button android:id="@+id/btn_phone_6" style="@style/PhoneButton" android:text="6" />
-            <Button android:id="@+id/btn_phone_7" style="@style/PhoneButton" android:text="7" />
-            <Button android:id="@+id/btn_phone_8" style="@style/PhoneButton" android:text="8" />
-        </GridLayout>
+            android:columnCount="2" />
     </LinearLayout>
 </FrameLayout>

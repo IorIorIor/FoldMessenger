@@ -7,7 +7,8 @@ package com.foldmessenger.app
 object Config {
     const val NTFY_SERVER = "https://ntfy.sh"
     const val TOPIC_BASE = "fm-pw3h5q3z"
-    const val PHONE_COUNT = 8
+    /** Handsets in the field. Keep in sync with PHONE_COUNT in sender.html. */
+    const val PHONE_COUNT = 6
 
     fun phoneTopic(id: Int) = "$TOPIC_BASE-p$id"
     fun allTopic() = "$TOPIC_BASE-all"

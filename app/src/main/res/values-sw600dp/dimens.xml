@@ -2,14 +2,17 @@
 <resources>
     <!-- Unfolded inner screen -->
     <dimen name="cover_title_size">72sp</dimen>
-    <dimen name="card_text_size">34sp</dimen>
-    <dimen name="name_text_size">28sp</dimen>
-    <dimen name="card_padding">36dp</dimen>
+    <dimen name="card_text_size">68sp</dimen>
+    <dimen name="name_text_size">56sp</dimen>
+    <dimen name="card_padding">48dp</dimen>
     <dimen name="card_corner_radius">36dp</dimen>
-    <dimen name="avatar_size">72dp</dimen>
-    <dimen name="byline_gap">20dp</dimen>
-    <dimen name="scrim_height">180dp</dimen>
-    <dimen name="idle_label_size">28sp</dimen>
-    <dimen name="idle_label_margin">48dp</dimen>
+    <dimen name="avatar_size">144dp</dimen>
+    <dimen name="avatar_size_media">80dp</dimen>
+    <dimen name="name_text_size_media">30sp</dimen>
+    <dimen name="byline_media_padding">26dp</dimen>
+    <dimen name="byline_gap">28dp</dimen>
+    <dimen name="scrim_height">260dp</dimen>
+    <dimen name="idle_label_size">14sp</dimen>
+    <dimen name="idle_label_margin">28dp</dimen>
     <dimen name="phone_button_size">96dp</dimen>
 </resources>

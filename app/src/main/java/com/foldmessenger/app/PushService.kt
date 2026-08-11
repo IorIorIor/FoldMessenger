@@ -66,6 +66,7 @@ class PushService : Service() {
     private var reconnectDelayMs = 5_000L
     private var destroyed = false
     private var alertPlayer: MediaPlayer? = null
+    private var updateCheckScheduled = false
 
     private val client = OkHttpClient.Builder()
         .pingInterval(30, TimeUnit.SECONDS)
@@ -90,7 +91,36 @@ class PushService : Service() {
             startForeground(NOTIF_ID_SERVICE, notification)
         }
         connectIfNeeded()
+        scheduleUpdateChecks()
         return START_STICKY
+    }
+
+    /** Poll GitHub Releases for a newer build: once on start, then every 15 min. */
+    private fun scheduleUpdateChecks() {
+        if (updateCheckScheduled) return
+        updateCheckScheduled = true
+        val interval = 15L * 60 * 1000
+        lateinit var tick: Runnable
+        tick = Runnable {
+            if (destroyed) return@Runnable
+            executor.execute { checkForUpdate() }
+            handler.postDelayed(tick, interval)
+        }
+        handler.postDelayed(tick, 10_000)
+    }
+
+    private fun checkForUpdate() {
+        try {
+            val apk = UpdateChecker.fetchUpdate(this, client) ?: return
+            // don't interrupt a live round — retry on the next tick instead
+            if (MessageStore.getLastMessage(this) != null) {
+                Log.i(TAG, "Update ready, waiting for idle to prompt install")
+                return
+            }
+            handler.post { UpdateChecker.promptInstall(this, apk) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Update check failed: ${e.message}")
+        }
     }
 
     override fun onDestroy() {

@@ -11,8 +11,26 @@ android {
         applicationId = "com.foldmessenger.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.7.0"
+        // Overridable for one-off builds: ./gradlew assembleRelease -PfmVersionCode=8 -PfmVersionName=1.7.9
+        versionCode = (project.findProperty("fmVersionCode") as String?)?.toInt() ?: 9
+        versionName = (project.findProperty("fmVersionName") as String?) ?: "1.8.0"
+    }
+
+    // One shared signing key for every build (local and CI), so phones can
+    // update in place. Keystore comes from the repo root locally or from the
+    // FM_KEYSTORE/FM_KEYSTORE_PASSWORD env vars in GitHub Actions.
+    signingConfigs {
+        create("shared") {
+            val ksFile = file(System.getenv("FM_KEYSTORE") ?: "${rootDir}/foldmessenger-release.keystore")
+            if (ksFile.exists()) {
+                val password = System.getenv("FM_KEYSTORE_PASSWORD")
+                    ?: rootProject.file("keystore-password.txt").takeIf { it.exists() }?.readText()?.trim()
+                storeFile = ksFile
+                storePassword = password
+                keyAlias = "foldmessenger"
+                keyPassword = password
+            }
+        }
     }
 
     // Versioned APK filename, e.g. FoldMessenger-v1.6.0.apk
@@ -26,7 +44,12 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("shared")
         }
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {

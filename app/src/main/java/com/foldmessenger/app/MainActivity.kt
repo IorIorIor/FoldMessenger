@@ -492,6 +492,15 @@ class MainActivity : AppCompatActivity() {
                 Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                     .setData(Uri.parse("package:$packageName"))
             )
+            return
+        }
+        // "install unknown apps" — lets the app apply its own updates
+        if (!packageManager.canRequestPackageInstalls() && !promptedInstall) {
+            promptedInstall = true
+            startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                    .setData(Uri.parse("package:$packageName"))
+            )
         }
     }
 
@@ -499,5 +508,6 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "MainActivity"
         private var promptedOverlay = false
         private var promptedBattery = false
+        private var promptedInstall = false
     }
 }

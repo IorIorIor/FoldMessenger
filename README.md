@@ -39,6 +39,38 @@ replace them with the real photos. Avatars are centre-cropped to a circle, so sq
 images look best. The list length is driven by the names array: add a 9th name plus
 `avatar_9.png` and it appears with no code change.
 
+## Background
+
+The background is the live [UfoldedFX](https://github.com/IorIorIor/UfoldedFX) aura-heart
+shader rather than a baked PNG. `app/src/main/assets/heart-view.html` is a self-contained
+WebGL page (no network requests) rendered in a WebView behind the viewer; `FxBackground.kt`
+animates it between four states as the app changes screen:
+
+| app state | background state |
+| --- | --- |
+| idle, waiting | `IDLE` |
+| cover screen, "New Secret!" | `NEW REVEAL` |
+| reveal, text-only secret | `TEXT MESSAGE` |
+| reveal, photo or clip | `MEDIA MESSAGE` |
+
+Transitions are ~1.4 s eased and interrupt cleanly, so a burst of messages still looks
+continuous. The animation is frozen in `onPause()` to save power.
+
+To change the look, edit the states in the UfoldedFX app, then re-bake them there
+(in a checkout of the UfoldedFX repo):
+
+```sh
+curl https://<your-railway-app>/api/presets > android/states.json
+node android/build-viewer.js
+```
+
+and copy the regenerated `android/heart-view.html` into this repo's
+`app/src/main/assets/`. The four state names above must keep their spelling —
+`FxBackground` looks them up by name.
+
+`bg_cover.png` is still used, but only for the lock-screen notification teaser, which
+needs a static bitmap.
+
 ## Installing on each phone
 
 1. Copy `FoldMessenger.apk` to the phone and open it (allow "install unknown apps" when prompted).

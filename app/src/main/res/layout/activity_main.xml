@@ -11,11 +11,12 @@
         android:layout_height="match_parent"
         android:visibility="gone">
 
-        <ImageView
-            android:id="@+id/bg_image"
+        <!-- Live WebGL background (assets/heart-view.html), driven by FxBackground.
+             Inside viewer_group so it isn't rendering during first-run setup. -->
+        <WebView
+            android:id="@+id/fx_background"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:scaleType="centerCrop"
             android:importantForAccessibility="no" />
 
         <!-- The message card. Width/height wrap the content, so the box grows

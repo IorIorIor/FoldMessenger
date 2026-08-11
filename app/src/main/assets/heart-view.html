@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HeartFX viewer</title>
+<style>
+  * { margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: #14081f; }
+  #glcanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #err { position: fixed; left: 8px; bottom: 8px; color: #ff8080; font: 11px monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<canvas id="glcanvas"></canvas>
+<div id="err"></div>
+<script>
+'use strict';
+
+// ---- baked states (regenerate with build-viewer.js after editing states.json)
+const STATES = [
+  {
+    "id": "726685a9-6208-41f3-8935-59c5cbe0daef",
+    "name": "TEXT MESSAGE",
+    "state": {
+      "scale": 0.9100000000000001,
+      "posX": 0,
+      "posY": 0,
+      "stretchX": 1,
+      "stretchY": 1,
+      "rot": 0,
+      "round": 0,
+      "shapeMix": 0,
+      "nestMix": 0,
+      "spread": 0.68,
+      "bandOff": -0.07,
+      "spaceExp": 0.92,
+      "soft": 0.09,
+      "glowStr": 0.69,
+      "glowFall": 0.29000000000000004,
+      "pulseSpeed": 0.19,
+      "pulseAmt": 0.16,
+      "pulseShape": 0.27,
+      "beatSharp": 28.5,
+      "spin": 0,
+      "hueCycle": 0,
+      "sliceMix": 1,
+      "sliceSpace": 8,
+      "sliceOffX": 0.225,
+      "sliceOffY": 0,
+      "sliceZoom": 0,
+      "sliceSkew": 0.04,
+      "slicePersp": 0,
+      "sliceRandom": 0,
+      "sliceSeed": 0,
+      "stripShade": 0,
+      "shadeWidth": 0,
+      "drift": 0,
+      "chromAb": 0,
+      "grain": 0.08,
+      "vig": 1,
+      "bright": 1,
+      "contrast": 1.07,
+      "sat": 1.1,
+      "colGlow": "#b48cff"
+    },
+    "gradStops": [
+      {
+        "p": 0.004,
+        "c": "#510125"
+      },
+      {
+        "p": 0.212,
+        "c": "#2377fb"
+      },
+      {
+        "p": 0.302,
+        "c": "#ef56bb"
+      },
+      {
+        "p": 0.401,
+        "c": "#fc2f42"
+      },
+      {
+        "p": 0.508,
+        "c": "#fc9ca5"
+      },
+      {
+        "p": 0.655,
+        "c": "#9160e6"
+      },
+      {
+        "p": 0.736,
+        "c": "#1f072a"
+      }
+    ]
+  },
+  {
+    "id": "59141785-2d33-47ee-9ea5-f8f69435ba16",
+    "name": "IDLE",
+    "state": {
+      "scale": 4.21,
+      "posX": 0,
+      "posY": 0,
+      "stretchX": 1,
+      "stretchY": 1,
+      "rot": 0,
+      "round": 0,
+      "shapeMix": 0,
+      "nestMix": 0,
+      "spread": 0.79,
+      "bandOff": -0.07,
+      "spaceExp": 0.92,
+      "soft": 0.09,
+      "glowStr": 1.12,
+      "glowFall": 0.29,
+      "pulseSpeed": 0.31,
+      "pulseAmt": 0.16,
+      "pulseShape": 0,
+      "beatSharp": 28.5,
+      "spin": 0,
+      "hueCycle": 0,
+      "sliceMix": 1,
+      "sliceSpace": 0,
+      "sliceOffX": 0.225,
+      "sliceOffY": 0,
+      "sliceZoom": 0,
+      "sliceSkew": 0.04,
+      "slicePersp": 0,
+      "sliceRandom": 0,
+      "sliceSeed": 0,
+      "stripShade": 0,
+      "shadeWidth": 0,
+      "drift": 0,
+      "chromAb": 0,
+      "grain": 0.08,
+      "vig": 1,
+      "bright": 1,
+      "contrast": 1.07,
+      "sat": 1.1,
+      "colGlow": "#b48cff"
+    },
+    "gradStops": [
+      {
+        "p": 0.004,
+        "c": "#02032c"
+      },
+      {
+        "p": 0.212,
+        "c": "#2377fb"
+      },
+      {
+        "p": 0.302,
+        "c": "#ef56bb"
+      },
+      {
+        "p": 0.401,
+        "c": "#fc2f42"
+      },
+      {
+        "p": 0.508,
+        "c": "#fc9ca5"
+      },
+      {
+        "p": 0.655,
+        "c": "#9160e6"
+      },
+      {
+        "p": 0.736,
+        "c": "#1f072a"
+      }
+    ]
+  },
+  {
+    "id": "d5f07e19-9b39-41b3-bfdc-7ddbf504e141",
+    "name": "MEDIA MESSAGE",
+    "state": {
+      "scale": 4.21,
+      "posX": 0,
+      "posY": 0,
+      "stretchX": 1,
+      "stretchY": 1,
+      "rot": 0,
+      "round": 0,
+      "shapeMix": 0,
+      "nestMix": 0,
+      "spread": 0.79,
+      "bandOff": -0.07,
+      "spaceExp": 0.92,
+      "soft": 0.09,
+      "glowStr": 1.12,
+      "glowFall": 0.29,
+      "pulseSpeed": 0.31,
+      "pulseAmt": 0.16,
+      "pulseShape": 0,
+      "beatSharp": 28.5,
+      "spin": 0,
+      "hueCycle": 0,
+      "sliceMix": 1,
+      "sliceSpace": 32,
+      "sliceOffX": 0.225,
+      "sliceOffY": 0,
+      "sliceZoom": 0,
+      "sliceSkew": 0.04,
+      "slicePersp": 0,
+      "sliceRandom": 0,
+      "sliceSeed": 0,
+      "stripShade": 0,
+      "shadeWidth": 0,
+      "drift": 0,
+      "chromAb": 0,
+      "grain": 0.08,
+      "vig": 1,
+      "bright": 1,
+      "contrast": 1.07,
+      "sat": 1.1,
+      "colGlow": "#b48cff"
+    },
+    "gradStops": [
+      {
+        "p": 0.004,
+        "c": "#02032c"
+      },
+      {
+        "p": 0.212,
+        "c": "#2377fb"
+      },
+      {
+        "p": 0.302,
+        "c": "#ef56bb"
+      },
+      {
+        "p": 0.401,
+        "c": "#fc2f42"
+      },
+      {
+        "p": 0.508,
+        "c": "#fc9ca5"
+      },
+      {
+        "p": 0.655,
+        "c": "#9160e6"
+      },
+      {
+        "p": 0.736,
+        "c": "#1f072a"
+      }
+    ]
+  },
+  {
+    "id": "4ae8a98f-156b-41bc-ac27-5e8d8aed1628",
+    "name": "NEW REVEAL",
+    "state": {
+      "scale": 3.78,
+      "posX": 0,
+      "posY": 0.61,
+      "stretchX": 0.62,
+      "stretchY": 1,
+      "rot": 0,
+      "round": 0,
+      "shapeMix": 0,
+      "nestMix": 0,
+      "spread": 0.56,
+      "bandOff": -0.07,
+      "spaceExp": 0.92,
+      "soft": 0.09,
+      "glowStr": 1.12,
+      "glowFall": 0.29,
+      "pulseSpeed": 0.42,
+      "pulseAmt": 0.16,
+      "pulseShape": 1,
+      "beatSharp": 28.5,
+      "spin": 0,
+      "hueCycle": 0,
+      "sliceMix": 1,
+      "sliceSpace": 0,
+      "sliceOffX": 0.225,
+      "sliceOffY": 0,
+      "sliceZoom": 0,
+      "sliceSkew": 0.05,
+      "slicePersp": 0,
+      "sliceRandom": 0,
+      "sliceSeed": 0,
+      "stripShade": 0,
+      "shadeWidth": 0,
+      "drift": 0,
+      "chromAb": 0,
+      "grain": 0.08,
+      "vig": 1,
+      "bright": 1,
+      "contrast": 1.07,
+      "sat": 1.1,
+      "colGlow": "#b48cff"
+    },
+    "gradStops": [
+      {
+        "p": 0.004,
+        "c": "#02032c"
+      },
+      {
+        "p": 0.212,
+        "c": "#2377fb"
+      },
+      {
+        "p": 0.2831688596491228,
+        "c": "#fc9ca5"
+      },
+      {
+        "p": 0.2931688596491228,
+        "c": "#fc9ca5"
+      },
+      {
+        "p": 0.36437774122807015,
+        "c": "#fc9ca5"
+      },
+      {
+        "p": 0.37437774122807016,
+        "c": "#fc2f42"
+      },
+      {
+        "p": 0.736,
+        "c": "#1f072a"
+      }
+    ]
+  }
+];
+const DEFAULTS = {"scale":0.91,"posX":0,"posY":0,"stretchX":1,"stretchY":1,"rot":0,"round":0,"shapeMix":0,"nestMix":0,"spread":0.68,"bandOff":-0.07,"spaceExp":0.92,"soft":0.09,"glowStr":0.69,"glowFall":0.29,"pulseSpeed":0.52,"pulseAmt":0.06,"pulseShape":0.19,"beatSharp":12,"spin":0,"hueCycle":0,"sliceMix":1,"sliceSpace":5,"sliceOffX":0.225,"sliceOffY":0,"sliceZoom":0,"sliceSkew":0.04,"slicePersp":0,"sliceRandom":0,"sliceSeed":0,"stripShade":0,"shadeWidth":0,"drift":0,"chromAb":0,"grain":0.08,"vig":1,"bright":1,"contrast":1.07,"sat":1.1,"colGlow":"#b48cff"};
+const DEFAULT_STOPS = [
+  { p: 0.004, c: '#510125' },  // core
+  { p: 0.212, c: '#2377fb' },  // blue
+  { p: 0.302, c: '#ef56bb' },  // magenta
+  { p: 0.401, c: '#fc2f42' },  // red
+  { p: 0.508, c: '#fc9ca5' },  // pink
+  { p: 0.655, c: '#9160e6' },  // violet
+  { p: 0.736, c: '#1f072a' },  // background
+];
+
+const HEART_PTS = [0.477,0.460,0.494,0.491,0.509,0.523,0.523,0.556,0.534,0.589,0.542,0.624,0.545,0.659,0.544,0.695,0.540,0.730,0.532,0.765,0.520,0.798,0.503,0.829,0.484,0.859,0.461,0.886,0.436,0.911,0.408,0.933,0.378,0.952,0.347,0.969,0.315,0.983,0.281,0.993,0.246,0.999,0.210,1.000,0.175,0.997,0.140,0.989,0.107,0.976,0.077,0.958,0.051,0.934,0.030,0.906,0.013,0.875,0.000,0.842,-0.012,0.868,-0.027,0.900,-0.048,0.929,-0.073,0.954,-0.103,0.973,-0.135,0.987,-0.170,0.996,-0.205,1.000,-0.240,0.999,-0.276,0.994,-0.310,0.985,-0.343,0.972,-0.374,0.955,-0.404,0.936,-0.432,0.914,-0.457,0.890,-0.481,0.863,-0.501,0.834,-0.518,0.803,-0.530,0.770,-0.539,0.735,-0.543,0.700,-0.545,0.665,-0.543,0.629,-0.536,0.595,-0.525,0.561,-0.512,0.528,-0.496,0.496,-0.480,0.465,-0.462,0.434,-0.443,0.404,-0.423,0.374,-0.403,0.346,-0.381,0.318,-0.359,0.290,-0.335,0.263,-0.311,0.238,-0.286,0.213,-0.259,0.189,-0.232,0.166,-0.205,0.143,-0.177,0.122,-0.149,0.100,-0.120,0.080,-0.091,0.059,-0.061,0.040,-0.032,0.020,-0.002,0.000,0.027,0.017,0.057,0.037,0.086,0.056,0.116,0.076,0.144,0.097,0.173,0.118,0.201,0.140,0.228,0.162,0.255,0.186,0.281,0.209,0.307,0.234,0.331,0.260,0.355,0.286,0.377,0.314,0.399,0.342,0.420,0.370,0.440,0.399,0.459,0.429];
+
+const VERT = `
+attribute vec2 a_pos;
+void main(){ gl_Position = vec4(a_pos, 0.0, 1.0); }
+`;
+
+const FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+uniform vec2  u_res;
+uniform float u_time;
+
+uniform float u_scale, u_posX, u_posY, u_stretchX, u_stretchY, u_rot, u_round;
+uniform float u_spread, u_bandOff, u_spaceExp, u_soft, u_glowStr, u_glowFall;
+uniform float u_pulseAmt, u_pulseShape, u_beatSharp;
+// phases are integrated on the CPU (phase += speed * dt) so that animating
+// a speed slider changes the rate of motion, never the current phase —
+// computing fract(time * speed) here would jump wildly while speed tweens
+uniform float u_pulsePhase, u_spinPhase, u_huePhase, u_driftPhase;
+uniform float u_sliceMix, u_sliceOffX, u_sliceOffY, u_sliceZoom, u_sliceSpaceFrac;
+uniform float u_sliceSeed, u_stripShade, u_shadeWidth, u_drift;
+uniform float u_sliceSkew, u_slicePersp, u_sliceRandom;
+uniform float u_chromAb, u_grain, u_vig, u_bright, u_contrast, u_sat;
+uniform float u_shapeMix, u_nestMix;
+uniform sampler2D u_sdf;
+uniform sampler2D u_rad;
+uniform vec3  u_colGlow;
+uniform sampler2D u_grad;
+uniform float u_glowU0, u_glowU1;
+
+float dot2(vec2 v){ return dot(v, v); }
+// sin-free hashes (Dave Hoskins) — stable on mediump mobile GPUs
+float hash(float n){
+  n = fract(n * 0.1031);
+  n *= n + 33.33;
+  n *= n + n;
+  return fract(n);
+}
+float hash2(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+// exact heart SDF (Inigo Quilez) — tip at origin, lobes toward y = 1
+float sdHeart(vec2 p){
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0)
+    return sqrt(dot2(p - vec2(0.25, 0.75))) - 0.35355339;
+  return sqrt(min(dot2(p - vec2(0.0, 1.0)),
+                  dot2(p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y);
+}
+
+// SDF baked from the SVG heart outline into a 16-bit texture over
+// domain x,y in [-2,2]x[-1.5,2.5]; decode kept mediump-safe
+const float SDF_TS = 192.0;
+float sdfDecode(vec4 t){
+  return (t.r * 256.0 + t.g) / 257.0 * 3.5 - 0.75;
+}
+float sdSvg(vec2 p){
+  vec2 uv = (p - vec2(-2.0, -1.5)) / 4.0;
+  vec2 f = clamp(uv * SDF_TS - 0.5, 0.0, SDF_TS - 1.001);
+  vec2 b = floor(f);
+  vec2 fr = f - b;
+  vec2 t0 = (b + 0.5) / SDF_TS;
+  float px = 1.0 / SDF_TS;
+  float d00 = sdfDecode(texture2D(u_sdf, t0));
+  float d10 = sdfDecode(texture2D(u_sdf, t0 + vec2(px, 0.0)));
+  float d01 = sdfDecode(texture2D(u_sdf, t0 + vec2(0.0, px)));
+  float d11 = sdfDecode(texture2D(u_sdf, t0 + vec2(px, px)));
+  return mix(mix(d00, d10, fr.x), mix(d01, d11, fr.x), fr.y);
+}
+
+// polar radius of the heart about its centre, from a 512x1 lookup table
+float radiusAt(float ang){
+  float x = (ang + 3.14159265) / 6.2831853 * 512.0 - 0.5;
+  float b = floor(x);
+  float fr = x - b;
+  float u0 = (mod(b, 512.0) + 0.5) / 512.0;
+  float u1 = (mod(b + 1.0, 512.0) + 0.5) / 512.0;
+  vec4 t0 = texture2D(u_rad, vec2(u0, 0.5));
+  vec4 t1 = texture2D(u_rad, vec2(u1, 0.5));
+  float r0 = (t0.r * 256.0 + t0.g) / 257.0;
+  float r1 = (t1.r * 256.0 + t1.g) / 257.0;
+  return mix(r0, r1, fr) * 1.5;
+}
+
+// nested field: iso-contours are scaled copies of the heart, so every ring
+// keeps the notch and the tip (this is how the reference wallpaper nests)
+float sdNested(vec2 p){
+  vec2 v = p - vec2(0.0, 0.5);
+  float len = length(v);
+  if (len < 1e-4) return -0.55;
+  float R = radiusAt(atan(v.y, v.x));
+  return (len / max(R, 1e-3) - 1.0) * 0.55;
+}
+
+float heartSDF(vec2 p){
+  float dOff;
+  if      (u_shapeMix > 0.999) dOff = sdHeart(p);
+  else if (u_shapeMix < 0.001) dOff = sdSvg(p);
+  else                         dOff = mix(sdSvg(p), sdHeart(p), u_shapeMix);
+  if (u_nestMix > 0.999) return dOff;
+  // nested rings near the heart, easing into offset rings with distance, so
+  // inner rings keep a deep notch and the halo smooths out (as in the
+  // reference wallpaper); u_nestMix pushes the whole field toward offset
+  float dN = sdNested(p);
+  float w = mix(smoothstep(0.05, 0.65, dN), 1.0, u_nestMix);
+  return mix(dN, dOff, w);
+}
+
+float gauss(float x, float c, float w){
+  float d = (x - c) * w;
+  return exp(-d * d);
+}
+
+// heartbeat curve: sine blended toward a double-thump
+float pulse(){
+  float t = fract(u_pulsePhase);
+  float sine = 0.5 + 0.5 * sin(6.2831853 * t);
+  float beat = gauss(t, 0.12, u_beatSharp) + 0.55 * gauss(t, 0.34, u_beatSharp * 1.1);
+  return mix(sine, min(beat, 1.0), u_pulseShape);
+}
+
+
+vec3 hueRotate(vec3 c, float a){
+  const vec3 k = vec3(0.57735026);
+  float ca = cos(a), sa = sin(a);
+  return c * ca + cross(k, c) * sa + k * dot(k, c) * (1.0 - ca);
+}
+
+// nested-heart gradient at aspect-corrected screen point uv
+vec3 heartColor(vec2 uv){
+  vec2 p = uv - vec2(u_posX, u_posY);
+  float ang = radians(u_rot) + u_spinPhase;
+  float ca = cos(ang), sa = sin(ang);
+  p = vec2(ca * p.x - sa * p.y, sa * p.x + ca * p.y);
+
+  float sc = u_scale * (1.0 + u_pulseAmt * pulse());
+  p /= sc;
+  p.x /= u_stretchX;
+  p.y /= u_stretchY;
+  p.y += 0.5; // heart occupies y in [0,1] in SDF space
+
+  float d = heartSDF(p);
+  float dc = length(p - vec2(0.0, 0.55)) - 0.55;
+  d = mix(d, dc, u_round);
+
+  // map the field onto the editable gradient: spread scales, shift slides,
+  // band curve warps, then one texture lookup on the baked 256x1 ramp
+  float dn = (d - u_bandOff) / u_spread;
+  dn = sign(dn) * pow(abs(dn), 1.0 / u_spaceExp);
+  float gu = (dn + 0.55) / 1.25;
+  vec3 c = texture2D(u_grad, vec2(clamp(gu, 0.002, 0.998), 0.5)).rgb;
+
+  float glowMask = smoothstep(u_glowU0 - u_soft / 1.25, u_glowU1, gu);
+  c += u_colGlow * u_glowStr * glowMask * exp(-max(gu - u_glowU0, 0.0) * 1.25 / max(u_glowFall, 0.01));
+  return c;
+}
+
+// vertical-strip glitch warp for a specific (integer) strip count; also
+// outputs per-strip edge shading. The strip count itself is fixed (see
+// A slice is a visible band of content; adjacent slices meet directly (no
+// separator bars) and are distinguished only by the discontinuity in what
+// they sample. "space" is the width of each slice: near 0 the slices go
+// hairline-thin and the warp becomes effectively continuous (reads as no
+// slicing at all), mid values give many visible slices, and 100 makes each
+// slice half the screen wide (reads as ~2 big slices). The grid is
+// anchored on a slice centred at the screen's middle, so it is always
+// mirror-symmetric and slices grow outward from the centre as the width
+// changes — a continuous motion, since every boundary position moves
+// smoothly with the width value.
+vec3 sliceLayer(vec2 uv, vec2 suv){
+  float shade = 1.0;
+  vec2 wuv = uv;
+  if (u_sliceMix > 0.001){
+    float aspect = u_res.x / u_res.y;
+    float w = max(clamp(u_sliceSpaceFrac, 0.0, 1.0), 0.004); // slice width in suv units (screen = 2)
+    // per-slice detail (shear, tilt, jitter, shading) fades out as slices
+    // approach subpixel width, so tiny widths stay clean instead of noisy
+    float gate = smoothstep(0.01, 0.08, w);
+
+    float p = suv.x / w + 0.5;   // grid with one slice centred on x = 0
+    float idx = floor(p);
+    float local = fract(p);
+    float cxs = idx * w;         // slice centre in suv space
+    float cx = cxs * aspect;     // slice centre in aspect space
+    float sd = cxs;              // signed distance from screen centre
+    float rank = abs(idx);       // shared by mirror partners — always symmetric
+
+    float h1 = hash(rank * 7.31 + u_sliceSeed * 1.13 + 3.7);
+    float h2 = hash(rank * 3.77 + u_sliceSeed * 2.71 + 11.0);
+    float h3 = hash(rank * 9.13 + u_sliceSeed * 0.93 + 27.0);
+    float h4 = hash(rank * 5.21 + u_sliceSeed * 1.31 + 41.0);
+    float h5 = hash(rank * 6.53 + u_sliceSeed * 0.57 + 53.0);
+
+    float dr = sin(u_driftPhase * 2.0 + rank * 1.71);
+    float dc2 = cos(u_driftPhase * 1.6 + rank * 2.39);
+
+    float alt = mod(rank, 2.0) * 2.0 - 1.0;         // alternating fold direction
+    float r = clamp(u_sliceRandom, 0.0, 1.0) * gate;
+
+    // random pattern
+    float oxR = (h1 - 0.5) * 2.0 * u_sliceOffX;
+    float oyR = (h2 - 0.5) * 2.0 * u_sliceOffY;
+    float stR = 1.0 + h3 * 2.0 * u_sliceZoom;
+    float skR = (h4 - 0.5) * 2.0 * u_sliceSkew;
+    float tiR = (h5 - 0.5) * 2.0 * u_slicePersp;
+
+    // centre-out pattern: distortion grows from the middle outward.
+    // oxC partially re-centres each slice's sampling, so central slices
+    // repeat the notch and the whole heart fans out like the reference.
+    float oxC = -sd * aspect * u_sliceOffX * 2.5;
+    float oyC = alt * u_sliceOffY * abs(sd);
+    float stC = 1.0 + u_sliceZoom * 1.5 * abs(sd);             // outer slices smear wider
+    float skC = sd * u_sliceSkew * 1.5;                        // shear flips at centre
+    float tiC = alt * u_slicePersp * (0.25 + 0.75 * abs(sd));  // accordion fold
+
+    float ox = mix(oxC, oxR, r) + 0.4 * dr  * u_sliceOffX * u_drift * gate;
+    float oy = (mix(oyC, oyR, r) + 0.4 * dc2 * u_sliceOffY * u_drift) * gate;
+    float stretch = max(mix(stC, stR, r), 0.1);
+    float skew = mix(skC, skR, r) * gate;
+    float tilt = mix(tiC, tiR, r) * gate;
+
+    vec2 guv = uv;
+    guv.x = cx + (uv.x - cx) / stretch + ox;
+    guv.y = uv.y + oy;
+
+    // folded-panel look: shear + fake perspective across each slice
+    float lc = local - 0.5;
+    guv.y += lc * skew * 0.7;
+    guv.y *= 1.0 + lc * tilt * 0.8;
+    wuv = mix(uv, guv, u_sliceMix);
+
+    float e = min(local, 1.0 - local) * 2.0;    // 0 at edges, 1 at centre
+    float g = mix(10.0, 1.2, clamp(u_shadeWidth, 0.0, 1.0));
+    float sh = 1.0 - u_stripShade * gate * pow(1.0 - e, g);
+    sh *= 1.0 - 0.55 * clamp(tilt * lc * 2.0, 0.0, 1.0); // side tilted away goes dark
+    shade = mix(1.0, sh, u_sliceMix);
+  }
+  return heartColor(wuv) * shade;
+}
+
+vec3 render(vec2 uv, vec2 suv){
+  return sliceLayer(uv, suv);
+}
+
+void main(){
+  vec2 suv = (2.0 * gl_FragCoord.xy - u_res) / u_res;     // -1..1 both axes
+  vec2 uv  = (2.0 * gl_FragCoord.xy - u_res) / u_res.y;   // aspect corrected
+
+  vec3 col;
+  if (u_chromAb > 0.0001){
+    col.r = render(uv * (1.0 - u_chromAb), suv).r;
+    col.g = render(uv, suv).g;
+    col.b = render(uv * (1.0 + u_chromAb), suv).b;
+  } else {
+    col = render(uv, suv);
+  }
+
+  if (abs(u_huePhase) > 0.0001) col = hueRotate(col, u_huePhase);
+
+  // grade
+  float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(vec3(luma), col, u_sat);
+  col = (col - 0.5) * u_contrast + 0.5;
+  col *= u_bright;
+
+  col *= 1.0 - u_vig * smoothstep(0.45, 1.5, length(suv));
+  col += (hash2(gl_FragCoord.xy + fract(u_time) * 137.0) - 0.5) * u_grain;
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+// ---------------------------------------------------------------- gl setup
+const canvas = document.getElementById('glcanvas');
+const gl = canvas.getContext('webgl', { antialias: false })
+        || canvas.getContext('experimental-webgl', { antialias: false });
+const errBox = document.getElementById('err');
+if (!gl) errBox.textContent = 'WebGL is not available in this WebView.';
+
+function compile(type, srcText){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, srcText);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+
+let prog;
+try {
+  prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+} catch (e) {
+  errBox.textContent = 'Shader error:\n' + e.message;
+  throw e;
+}
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+const aPos = gl.getAttribLocation(prog, 'a_pos');
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+const loc = {};
+function u(name){ return loc[name] || (loc[name] = gl.getUniformLocation(prog, name)); }
+
+// ---------------------------------------------------------------- helpers
+function hexToRgb(hex){
+  const v = parseInt(hex.slice(1), 16);
+  return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+}
+function rgbToHex(rgb){
+  return '#' + rgb.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
+}
+function lerpHex(a, b, t){
+  const ra = hexToRgb(a), rb = hexToRgb(b);
+  return rgbToHex([ra[0] + (rb[0] - ra[0]) * t, ra[1] + (rb[1] - ra[1]) * t, ra[2] + (rb[2] - ra[2]) * t]);
+}
+function easeInOutCubic(t){ return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+function smoothstepJs(a, b, x){
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+// ---------------------------------------------------------------- state
+const first = STATES[0] || { state: {}, gradStops: null };
+const state = { ...DEFAULTS, ...(first.state || {}) };
+let gradStops = (first.gradStops && first.gradStops.length >= 2)
+  ? first.gradStops.map(s => ({ ...s }))
+  : DEFAULT_STOPS.map(s => ({ ...s }));
+function setParam(k, v){ state[k] = v; }
+
+// ---------------------------------------------------------------- textures
+function buildSdfTexture(){
+  const TS = 192, n = HEART_PTS.length / 2;
+  const data = new Uint8Array(TS * TS * 4);
+  for (let j = 0; j < TS; j++){
+    const py = -1.5 + 4.0 * (j + 0.5) / TS;
+    for (let i2 = 0; i2 < TS; i2++){
+      const px = -2.0 + 4.0 * (i2 + 0.5) / TS;
+      let best = 1e9;
+      let inside = false;
+      for (let k = 0; k < n; k++){
+        const ax = HEART_PTS[k*2],           ay = HEART_PTS[k*2+1];
+        const bx = HEART_PTS[((k+1)%n)*2],   by = HEART_PTS[((k+1)%n)*2+1];
+        const ex = bx - ax, ey = by - ay;
+        const wx = px - ax, wy = py - ay;
+        const t = Math.max(0, Math.min(1, (wx*ex + wy*ey) / (ex*ex + ey*ey)));
+        const dx = wx - ex*t, dy = wy - ey*t;
+        const dist = dx*dx + dy*dy;
+        if (dist < best) best = dist;
+        if ((ay > py) !== (by > py) && wx < ex * (py - ay) / ey) inside = !inside;
+      }
+      const d = (inside ? -1 : 1) * Math.sqrt(best);
+      const v = Math.max(0, Math.min(65535, Math.round((d + 0.75) / 3.5 * 65535)));
+      const o = (j * TS + i2) * 4;
+      data[o] = v >> 8; data[o+1] = v & 255; data[o+2] = 0; data[o+3] = 255;
+    }
+  }
+  const t = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, TS, TS, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  gl.activeTexture(gl.TEXTURE0);
+}
+buildSdfTexture();
+gl.uniform1i(gl.getUniformLocation(prog, 'u_sdf'), 1);
+
+function buildRadialTexture(){
+  const RT = 512, n = HEART_PTS.length / 2, ax = 0, ay = 0.5;
+  const data = new Uint8Array(RT * 4);
+  for (let i2 = 0; i2 < RT; i2++){
+    const ang = (i2 + 0.5) / RT * Math.PI * 2 - Math.PI;
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    let best = 0;
+    for (let k = 0; k < n; k++){
+      const x1 = HEART_PTS[k*2],         y1 = HEART_PTS[k*2+1];
+      const x2 = HEART_PTS[((k+1)%n)*2], y2 = HEART_PTS[((k+1)%n)*2+1];
+      const ex = x2 - x1, ey = y2 - y1;
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const wx = x1 - ax, wy = y1 - ay;
+      const t = (wx * ey - wy * ex) / den;
+      const s = (wx * dy - wy * dx) / den;
+      if (t > 0 && s >= 0 && s <= 1 && t > best) best = t;
+    }
+    const v = Math.max(0, Math.min(65535, Math.round(best / 1.5 * 65535)));
+    data[i2*4] = v >> 8; data[i2*4+1] = v & 255; data[i2*4+2] = 0; data[i2*4+3] = 255;
+  }
+  const t = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, RT, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  gl.activeTexture(gl.TEXTURE0);
+}
+buildRadialTexture();
+gl.uniform1i(gl.getUniformLocation(prog, 'u_rad'), 2);
+
+function computeRamp(stops, soft){
+  const W = 256, arr = new Uint8ClampedArray(W * 4);
+  const rgbs = stops.map(s => hexToRgb(s.c));
+  const softU = Math.max(soft / 1.25, 0.004);
+  for (let x = 0; x < W; x++){
+    const u = (x + 0.5) / W;
+    let c = rgbs[0].slice();
+    for (let i = 1; i < stops.length; i++){
+      const m = smoothstepJs(stops[i].p - softU, stops[i].p + softU, u);
+      c = [c[0] + (rgbs[i][0] - c[0]) * m, c[1] + (rgbs[i][1] - c[1]) * m, c[2] + (rgbs[i][2] - c[2]) * m];
+    }
+    arr[x*4] = c[0]*255; arr[x*4+1] = c[1]*255; arr[x*4+2] = c[2]*255; arr[x*4+3] = 255;
+  }
+  return arr;
+}
+
+let gradTex = null, lastRamp = null, bakedSoft = -1, glowOverride = null;
+function uploadRamp(arr){
+  lastRamp = arr;
+  if (!gradTex) gradTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, gradTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(arr.buffer));
+  gl.activeTexture(gl.TEXTURE0);
+}
+function bakeGradient(){
+  bakedSoft = state.soft;
+  uploadRamp(computeRamp(gradStops, state.soft));
+}
+gl.uniform1i(u('u_grad'), 3);
+bakeGradient();
+
+// ------------------------------------------------- animation phase clocks
+let pulsePhase = 0, spinPhase = 0, huePhase = 0, driftPhase = 0;
+let lastTick = performance.now();
+let paused = false, t0 = performance.now(), timeAcc = 0;
+
+function wrapAngle(a){ return Math.atan2(Math.sin(a), Math.cos(a)); }
+
+function advancePhases(){
+  const now = performance.now();
+  const dt = Math.min((now - lastTick) / 1000, 0.1);
+  lastTick = now;
+  if (paused) return;
+  pulsePhase = (pulsePhase + state.pulseSpeed * dt) % 1000;
+  driftPhase = (driftPhase + state.drift * dt) % 1000;
+  spinPhase += state.spin * dt;
+  huePhase += state.hueCycle * 2.0 * dt;
+  if (Math.abs(state.spin) < 0.001) spinPhase -= wrapAngle(spinPhase) * Math.min(3 * dt, 1);
+  if (Math.abs(state.hueCycle) < 0.001) huePhase -= wrapAngle(huePhase) * Math.min(3 * dt, 1);
+}
+
+// ---------------------------------------------------------------- tween
+let tweenToken = 0;
+
+function animateToState(p, duration){
+  duration = duration || 1400;
+  const myToken = ++tweenToken;
+  const fromState = { ...state };
+  const toStateSrc = p.state || {};
+  const numericKeys = [], hexKeys = [];
+  for (const k in fromState){
+    if (!(k in toStateSrc)) continue;
+    if (typeof fromState[k] === 'number' && typeof toStateSrc[k] === 'number') numericKeys.push(k);
+    else if (typeof fromState[k] === 'string' && typeof toStateSrc[k] === 'string') hexKeys.push(k);
+  }
+
+  const hasGrad = Array.isArray(p.gradStops) && p.gradStops.length >= 2 && lastRamp;
+  let fromRamp, toStops, fromGlow, toGlow;
+  if (hasGrad){
+    fromRamp = lastRamp.slice();
+    toStops = p.gradStops.map(s => ({ ...s }));
+    const cur = glowOverride || [gradStops[gradStops.length - 2].p, gradStops[gradStops.length - 1].p];
+    fromGlow = [cur[0], cur[1]];
+    toGlow = [toStops[toStops.length - 2].p, toStops[toStops.length - 1].p];
+  }
+
+  const start = performance.now();
+  function step(now){
+    if (myToken !== tweenToken) return;
+    const t = Math.min(1, (now - start) / duration);
+    const e = easeInOutCubic(t);
+
+    for (const k of numericKeys) setParam(k, fromState[k] + (toStateSrc[k] - fromState[k]) * e);
+    for (const k of hexKeys) setParam(k, lerpHex(fromState[k], toStateSrc[k], e));
+
+    if (hasGrad){
+      const toRamp = computeRamp(toStops, state.soft);
+      const blended = new Uint8ClampedArray(fromRamp.length);
+      for (let i = 0; i < blended.length; i++) blended[i] = fromRamp[i] + (toRamp[i] - fromRamp[i]) * e;
+      uploadRamp(blended);
+      bakedSoft = state.soft;
+      glowOverride = [
+        fromGlow[0] + (toGlow[0] - fromGlow[0]) * e,
+        fromGlow[1] + (toGlow[1] - fromGlow[1]) * e,
+      ];
+    }
+
+    if (t < 1){
+      requestAnimationFrame(step);
+    } else if (hasGrad){
+      gradStops = toStops;
+      glowOverride = null;
+      bakeGradient();
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// ---------------------------------------------------------------- draw
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.floor(innerWidth * dpr), h = Math.floor(innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h){
+    canvas.width = w; canvas.height = h;
+    gl.viewport(0, 0, w, h);
+  }
+}
+window.addEventListener('resize', resize);
+resize();
+
+function drawScene(){
+  resize();
+  if (state.soft !== bakedSoft) bakeGradient();
+  const t = (paused ? timeAcc : timeAcc + (performance.now() - t0) / 1000) % 3600;
+  gl.uniform2f(u('u_res'), canvas.width, canvas.height);
+  gl.uniform1f(u('u_time'), t);
+  gl.uniform1f(u('u_pulsePhase'), pulsePhase);
+  gl.uniform1f(u('u_spinPhase'), spinPhase);
+  gl.uniform1f(u('u_huePhase'), huePhase);
+  gl.uniform1f(u('u_driftPhase'), driftPhase);
+  const ga = glowOverride || [gradStops[gradStops.length - 2].p, gradStops[gradStops.length - 1].p];
+  gl.uniform1f(u('u_glowU0'), ga[0]);
+  gl.uniform1f(u('u_glowU1'), ga[1]);
+  for (const k in state){
+    const v = state[k];
+    if (k === 'sliceSpace'){
+      gl.uniform1f(u('u_sliceSpaceFrac'), v / 100);
+      continue;
+    }
+    if (typeof v === 'number') gl.uniform1f(u('u_' + k), v);
+    else gl.uniform3fv(u('u_' + k), hexToRgb(v));
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function frame(){
+  advancePhases();
+  drawScene();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------------------------------------------------------------- API
+// Called from Android via WebView.evaluateJavascript(), e.g.
+//   webView.evaluateJavascript("HeartFX.setState('NEW REVEAL')", null);
+window.HeartFX = {
+  states(){ return STATES.map(s => s.name); },
+  setState(name, durationMs){
+    const p = STATES.find(s => s.name === name);
+    if (!p) return false;
+    animateToState(p, durationMs);
+    return true;
+  },
+  jumpState(name){
+    const p = STATES.find(s => s.name === name);
+    if (!p) return false;
+    tweenToken++; // cancel any running tween
+    for (const k in (p.state || {})) setParam(k, p.state[k]);
+    if (Array.isArray(p.gradStops) && p.gradStops.length >= 2){
+      gradStops = p.gradStops.map(s => ({ ...s }));
+      glowOverride = null;
+      bakeGradient();
+    }
+    return true;
+  },
+  pause(){
+    if (paused) return;
+    timeAcc += (performance.now() - t0) / 1000;
+    paused = true;
+  },
+  resume(){
+    if (!paused) return;
+    t0 = performance.now();
+    paused = false;
+  },
+};
+
+// boot into IDLE when present, else the first state
+const idle = STATES.find(s => s.name === 'IDLE');
+if (idle) window.HeartFX.jumpState('IDLE');
+</script>
+</body>
+</html>

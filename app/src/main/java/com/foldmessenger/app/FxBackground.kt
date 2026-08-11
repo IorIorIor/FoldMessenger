@@ -1,7 +1,9 @@
 package com.foldmessenger.app
 
 import android.graphics.Color
+import android.util.Log
 import android.view.View
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebView
 import android.webkit.WebViewClient
 
@@ -37,8 +39,27 @@ class FxBackground(private val webView: WebView) {
                 pending?.let { view.evaluateJavascript(setStateJs(it), null) }
                 pending = null
             }
+
+            /**
+             * The WebGL renderer runs in its own process and can be killed —
+             * losing its GL context when the phone folds, or under memory
+             * pressure. Returning false here would take the whole app down with
+             * it and drop the phone to the lock screen mid-round, so instead we
+             * reload the page and carry on with the background we were showing.
+             */
+            override fun onRenderProcessGone(
+                view: WebView,
+                detail: RenderProcessGoneDetail
+            ): Boolean {
+                val cause = if (detail.didCrash()) "crashed" else "killed by the system"
+                Log.w(TAG, "Background renderer $cause; reloading")
+                ready = false
+                pending = current
+                view.loadUrl(PAGE_URL)
+                return true // handled: keep the app alive
+            }
         }
-        webView.loadUrl("file:///android_asset/heart-view.html")
+        webView.loadUrl(PAGE_URL)
     }
 
     /** Animate to one of the four baked states. */
@@ -67,6 +88,8 @@ class FxBackground(private val webView: WebView) {
         const val MEDIA_MESSAGE = "MEDIA MESSAGE"
         const val NEW_REVEAL = "NEW REVEAL"
 
+        private const val TAG = "FxBackground"
+        private const val PAGE_URL = "file:///android_asset/heart-view.html"
         private val BASE_COLOR = Color.parseColor("#14081f")
     }
 }

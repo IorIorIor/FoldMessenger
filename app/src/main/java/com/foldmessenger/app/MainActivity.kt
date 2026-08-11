@@ -155,6 +155,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        isOnScreen = true
         fx.resume()
         MessageStore.onMessageChanged = { render() }
         render()
@@ -165,6 +166,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        isOnScreen = false
         MessageStore.onMessageChanged = null
         releasePlayer()
         fx.pause()
@@ -567,6 +569,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        /**
+         * Whether the viewer is actually on screen. PushService uses this to
+         * decide if its notification is still needed: startActivity() from the
+         * background reports success even when the system silently blocks it
+         * (locked phone, background-start limits), so "the call worked" is not
+         * evidence that anything is visible.
+         */
+        @Volatile
+        var isOnScreen = false
+            private set
+
         private const val TAG = "MainActivity"
         private var promptedOverlay = false
         private var promptedBattery = false

@@ -54,6 +54,9 @@ class PushService : Service() {
         /** Admin control message (sent by sender.html "Next round"): wipe all phones. */
         const val CMD_NEXT_ROUND = "__NEXTROUND__"
 
+        /** Time given to the direct launch before falling back to a notification. */
+        private const val VIEWER_LAUNCH_GRACE_MS = 700L
+
         /** Catch-up messages older than this are ignored (previous round). */
         private const val STALE_MESSAGE_SECONDS = 15 * 60
 
@@ -250,10 +253,18 @@ class PushService : Service() {
             ?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
         MessageStore.saveMessage(this, displayText, mediaPath, mime, personId)
-        // When the viewer takes over the screen itself there is nothing for a
-        // notification to do, and its heads-up banner would sit right on top of
-        // the reveal — so in that case just play the alert.
-        if (launchViewer()) playAlert() else postMessageNotification()
+        // Only skip the notification when the viewer is demonstrably already on
+        // screen; otherwise post it, because its full-screen intent is the only
+        // sanctioned way to surface over the keyguard when the phone is folded
+        // or locked.
+        launchViewer()
+        handler.postDelayed({
+            if (MainActivity.isOnScreen) {
+                playAlert()
+            } else {
+                postMessageNotification()
+            }
+        }, VIEWER_LAUNCH_GRACE_MS)
     }
 
     // Audio is handled by the NotificationChannel directly (no MediaPlayer).

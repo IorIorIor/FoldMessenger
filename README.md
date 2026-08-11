@@ -14,8 +14,30 @@ sender.html ──HTTPS──> ntfy.sh (push service) ──WebSocket──> Fol
 - The topic prefix is a **shared secret** — anyone who knows it can send to the phones.
   It lives in two places and must match: `Config.kt` (`TOPIC_BASE`) and `sender.html` (`TOPIC_BASE`).
   Change both + rebuild to rotate the secret.
-- Images are uploaded to ntfy.sh as attachments (max 15 MB); the app downloads them immediately,
-  so the 3-hour attachment expiry on ntfy.sh doesn't matter.
+- Images and videos are uploaded to ntfy.sh as attachments (max 15 MB); the app downloads
+  them immediately, so the 3-hour attachment expiry on ntfy.sh doesn't matter.
+- The person a secret belongs to travels in ntfy's `title` field as `p<roster position>`;
+  the phone looks up the matching avatar and name from its own baked-in roster.
+
+⚠️ **ntfy.sh free tier has a daily bandwidth cap.** Heavy testing with full-size images
+already hit it once (`HTTP 413 attachment too large, or bandwidth limit reached`). Before
+a live event either keep attachments small (the sender compresses them), buy an ntfy plan,
+or self-host ntfy and change `NTFY_SERVER` in `Config.kt` and `SERVER` in `sender.html`.
+
+## The roster (avatars + names)
+
+The cast of people a secret can be attributed to is baked into the APK. To change it:
+
+1. edit `roster_names` in `app/src/main/res/values/roster.xml`
+2. drop a square photo in as `app/src/main/res/drawable-nodpi/avatar_<n>.png`, where `<n>`
+   is the 1-based position of that name in the list
+3. mirror the same names, in the same order, in the `ROSTER` array in `sender.html`
+4. rebuild and release
+
+The avatars currently in the repo are **placeholders** (coloured circles with an initial) —
+replace them with the real photos. Avatars are centre-cropped to a circle, so square
+images look best. The list length is driven by the names array: add a 9th name plus
+`avatar_9.png` and it appears with no code change.
 
 ## Installing on each phone
 
@@ -25,9 +47,11 @@ sender.html ──HTTPS──> ntfy.sh (push service) ──WebSocket──> Fol
 4. Allow **"Appear on top"** when the settings page opens (lets the app pop the image
    onto the cover screen the moment a message arrives).
 5. Allow **ignore battery optimizations** when asked (keeps the connection alive).
-5. If a full-screen-intent settings page opens, enable it for Fold Messenger
+6. Allow **"install unknown apps"** for Fold Messenger when asked — this is what lets
+   the app install its own updates later (see *Releases and auto-update*).
+7. If a full-screen-intent settings page opens, enable it for Fold Messenger
    (lets a message take over the screen instantly).
-6. Enable **Settings → Display → Continue apps on cover screen** for **Fold Messenger**,
+8. Enable **Settings → Display → Continue apps on cover screen** for **Fold Messenger**,
    so the viewer keeps running on the cover screen when you fold the phone closed.
    (On the Z Fold line, apps run on the cover screen natively — an incoming message
    takes over the cover display without any extra setting. The "Apps allowed on cover
@@ -63,10 +87,34 @@ Output: `app/build/outputs/apk/debug/FoldMessenger-v<version>.apk` (debug-signed
 for sideloading, not for the Play Store).
 
 **Versioning:** bump `versionCode` (integer, must always increase for in-place updates)
-and `versionName` (shown in the filename) in `app/build.gradle.kts`, then commit and tag:
+and `versionName` (shown in the filename) in `app/build.gradle.kts`, then commit and tag.
+
+## Releases and auto-update
+
+Pushing a version tag builds a signed APK in GitHub Actions and publishes it as a
+GitHub Release:
 
 ```bash
-git tag v<versionName>
+git tag v1.8.1 && git push origin v1.8.1
+```
+
+Every phone polls the latest release every 15 minutes. When a newer version is out it
+downloads the APK and opens Android's install dialog — someone taps **Update** once on
+each phone. Sideloaded apps can't install silently; one tap per phone is the floor.
+A live round is never interrupted: if a secret is currently on screen, the prompt waits
+until the phone is back at idle.
+
+**Signing.** Every build — local and CI — is signed with the same release keystore, which
+is what lets updates install over the running app and keep each phone's number and setup.
+`foldmessenger-release.keystore` and `keystore-password.txt` sit in the repo root but are
+**git-ignored**; the same pair lives in GitHub Actions secrets as `FM_KEYSTORE_B64` and
+`FM_KEYSTORE_PASSWORD`. Keep a backup — losing the keystore means every phone has to
+uninstall and reinstall to take another update.
+
+Building a release locally uses the same key:
+
+```bash
+./gradlew assembleRelease
 ```
 
 ## Known limitations

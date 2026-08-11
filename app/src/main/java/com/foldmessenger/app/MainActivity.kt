@@ -1,6 +1,7 @@
 package com.foldmessenger.app
 
 import android.Manifest
+import android.animation.ValueAnimator
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -8,6 +9,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.SurfaceTexture
 import android.graphics.drawable.Drawable
@@ -17,8 +19,11 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.style.ForegroundColorSpan
 import android.util.Log
 import android.util.TypedValue
 import android.view.Surface
@@ -26,6 +31,7 @@ import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.animation.LinearInterpolator
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.GridLayout
@@ -72,6 +78,8 @@ class MainActivity : AppCompatActivity() {
 
     private var player: MediaPlayer? = null
     private var pendingVideoPath: String? = null
+    private var titleTyper: ValueAnimator? = null
+    private var showingTeaser = false
 
     // Card sizing bounds, derived from the display the activity is currently on.
     private val maxCardWidth: Int
@@ -167,6 +175,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         isOnScreen = false
+        // re-arm, so returning to the teaser types it out again from the start
+        stopTypingTitle()
         MessageStore.onMessageChanged = null
         releasePlayer()
         fx.pause()
@@ -222,6 +232,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showIdle(phoneId: Int) {
+        stopTypingTitle()
         fx.show(FxBackground.IDLE)
         cardContainer.visibility = View.GONE
         coverTitle.visibility = View.GONE
@@ -235,9 +246,53 @@ class MainActivity : AppCompatActivity() {
         cardContainer.visibility = View.GONE
         idleLabel.visibility = View.GONE
         coverTitle.visibility = View.VISIBLE
+        // only on arrival at the teaser — a re-render (fold, resume) shouldn't
+        // restart the typing
+        if (!showingTeaser) {
+            showingTeaser = true
+            typeCoverTitle()
+        }
+    }
+
+    /**
+     * Reveal "New Secret!" a letter at a time. The full string is laid out from
+     * the start and the untyped tail is painted transparent, so the line breaks
+     * and the block's position never shift while it types.
+     */
+    private fun typeCoverTitle() {
+        val full = getString(R.string.cover_title)
+        titleTyper?.cancel()
+        titleTyper = ValueAnimator.ofInt(0, full.length).apply {
+            duration = full.length * MS_PER_LETTER
+            interpolator = LinearInterpolator()
+            addUpdateListener { anim ->
+                val shown = anim.animatedValue as Int
+                coverTitle.text = if (shown >= full.length) full else {
+                    SpannableString(full).apply {
+                        setSpan(
+                            ForegroundColorSpan(Color.TRANSPARENT),
+                            shown, full.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                    }
+                }
+            }
+            start()
+        }
+    }
+
+    /**
+     * Always leaves the title fully opaque. A cancelled reveal must never strand
+     * the transparent span on screen, which would make the teaser look blank.
+     */
+    private fun stopTypingTitle() {
+        titleTyper?.cancel()
+        titleTyper = null
+        showingTeaser = false
+        coverTitle.text = getString(R.string.cover_title)
     }
 
     private fun showMessage(message: MessageStore.Message) {
+        stopTypingTitle()
         coverTitle.visibility = View.GONE
         idleLabel.visibility = View.GONE
 
@@ -581,6 +636,9 @@ class MainActivity : AppCompatActivity() {
             private set
 
         private const val TAG = "MainActivity"
+
+        /** Typing speed of the cover-screen teaser. */
+        private const val MS_PER_LETTER = 90L
         private var promptedOverlay = false
         private var promptedBattery = false
         private var promptedInstall = false

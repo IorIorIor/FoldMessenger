@@ -3,10 +3,10 @@
     <!-- Cover screen (default) -->
     <dimen name="cover_title_size">40sp</dimen>
     <dimen name="card_text_size">34sp</dimen>
-    <dimen name="name_text_size">30sp</dimen>
+    <dimen name="name_text_size">21sp</dimen>
     <dimen name="card_padding">24dp</dimen>
     <dimen name="card_corner_radius">20dp</dimen>
-    <dimen name="avatar_size">72dp</dimen>
+    <dimen name="avatar_size">50dp</dimen>
     <dimen name="avatar_size_media">44dp</dimen>
     <dimen name="name_text_size_media">18sp</dimen>
     <dimen name="byline_media_padding">14dp</dimen>

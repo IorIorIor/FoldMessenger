@@ -3,10 +3,10 @@
     <!-- Unfolded inner screen -->
     <dimen name="cover_title_size">72sp</dimen>
     <dimen name="card_text_size">68sp</dimen>
-    <dimen name="name_text_size">56sp</dimen>
+    <dimen name="name_text_size">39sp</dimen>
     <dimen name="card_padding">48dp</dimen>
     <dimen name="card_corner_radius">36dp</dimen>
-    <dimen name="avatar_size">144dp</dimen>
+    <dimen name="avatar_size">100dp</dimen>
     <dimen name="avatar_size_media">80dp</dimen>
     <dimen name="name_text_size_media">30sp</dimen>
     <dimen name="byline_media_padding">26dp</dimen>

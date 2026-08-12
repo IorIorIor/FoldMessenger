@@ -128,6 +128,32 @@
                 android:textColor="#111111"
                 android:textSize="@dimen/done_button_size" />
 
+            <!-- after KLAAR: the one they picked, held on screen for the reveal -->
+            <LinearLayout
+                android:id="@+id/chosen_group"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/chosen_avatar"
+                    android:layout_width="@dimen/chosen_avatar_size"
+                    android:layout_height="@dimen/chosen_avatar_size"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/chosen_name"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/card_padding"
+                    android:fontFamily="@font/apris_black"
+                    android:textColor="@android:color/white"
+                    android:textSize="@dimen/chosen_name_size" />
+            </LinearLayout>
+
             <TextView
                 android:id="@+id/final_thanks"
                 android:layout_width="match_parent"

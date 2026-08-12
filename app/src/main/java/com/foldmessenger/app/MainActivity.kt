@@ -73,8 +73,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var finalGroup: View
     private lateinit var finalQuestionText: TextView
     private lateinit var voteGrid: GridLayout
+    private lateinit var voteScroll: View
     private lateinit var doneButton: Button
     private lateinit var finalThanks: TextView
+    private lateinit var chosenGroup: View
+    private lateinit var chosenAvatar: ImageView
+    private lateinit var chosenName: TextView
     private lateinit var setupTitle: TextView
 
     private var player: MediaPlayer? = null
@@ -84,7 +88,9 @@ class MainActivity : AppCompatActivity() {
     private var showingTeaser = false
     private var showingReveal = false
     private var showingFinal = false
-    private val picked = linkedSetOf<Int>()
+
+    /** The one dater picked in the closing question; null until they choose. */
+    private var pickedSeat: Int? = null
 
     // Card sizing bounds, derived from the display the activity is currently on.
     private val maxCardWidth: Int
@@ -133,8 +139,12 @@ class MainActivity : AppCompatActivity() {
         finalGroup = findViewById(R.id.final_group)
         finalQuestionText = findViewById(R.id.final_question)
         voteGrid = findViewById(R.id.vote_grid)
+        voteScroll = findViewById(R.id.vote_scroll)
         doneButton = findViewById(R.id.btn_done)
         finalThanks = findViewById(R.id.final_thanks)
+        chosenGroup = findViewById(R.id.chosen_group)
+        chosenAvatar = findViewById(R.id.chosen_avatar)
+        chosenName = findViewById(R.id.chosen_name)
         setupTitle = findViewById(R.id.setup_title)
 
         applyCardCorners()
@@ -556,7 +566,9 @@ class MainActivity : AppCompatActivity() {
 
         if (!showingFinal) {
             showingFinal = true
-            picked.clear()
+            pickedSeat = null
+            chosenGroup.visibility = View.GONE
+            voteScroll.visibility = View.VISIBLE
             buildVoteGrid()
             finalQuestionText.setText(R.string.final_question)
             finalQuestionText.visibility = View.VISIBLE
@@ -589,25 +601,41 @@ class MainActivity : AppCompatActivity() {
             avatar.setImageDrawable(circularAvatar(person.avatarRes))
             avatar.alpha = UNPICKED_ALPHA
             cell.setOnClickListener {
-                val nowPicked = if (picked.contains(person.seat)) {
-                    picked.remove(person.seat); false
-                } else {
-                    picked.add(person.seat); true
-                }
-                check.visibility = if (nowPicked) View.VISIBLE else View.GONE
-                avatar.animate()
-                    .alpha(if (nowPicked) 1f else UNPICKED_ALPHA)
-                    .setDuration(140)
-                    .start()
+                // exactly one second date: picking someone releases the last choice
+                pickedSeat = if (pickedSeat == person.seat) null else person.seat
+                paintPicks()
             }
+            cell.tag = person.seat
             voteGrid.addView(cell)
         }
-        doneButton.setOnClickListener { submitPicks() }
+        doneButton.setOnClickListener { submitPick() }
+        paintPicks()
     }
 
-    private fun submitPicks() {
+    /** Reflect the single choice across the grid. */
+    private fun paintPicks() {
+        for (i in 0 until voteGrid.childCount) {
+            val cell = voteGrid.getChildAt(i)
+            val seat = cell.tag as? Int ?: continue
+            val chosen = seat == pickedSeat
+            cell.findViewById<ImageView>(R.id.vote_check).visibility =
+                if (chosen) View.VISIBLE else View.GONE
+            cell.findViewById<ImageView>(R.id.vote_avatar).animate()
+                .alpha(if (chosen) 1f else UNPICKED_ALPHA)
+                .setDuration(140)
+                .start()
+        }
+        doneButton.alpha = if (pickedSeat == null) 0.5f else 1f
+    }
+
+    private fun submitPick() {
+        val seat = pickedSeat
+        if (seat == null) {
+            Toast.makeText(this, R.string.pick_one_first, Toast.LENGTH_SHORT).show()
+            return
+        }
         doneButton.isEnabled = false
-        VoteSender.submit(this, picked.toList()) { ok ->
+        VoteSender.submit(this, listOf(seat)) { ok ->
             runOnUiThread {
                 if (!ok) {
                     // let them try again rather than silently losing the answer
@@ -615,15 +643,31 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, R.string.vote_failed, Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
                 }
-                finalQuestionText.visibility = View.GONE
-                voteGrid.visibility = View.GONE
-                doneButton.visibility = View.GONE
-                finalThanks.setText(R.string.final_thanks)
-                finalThanks.visibility = View.VISIBLE
-                // back to idle after a beat
-                finalGroup.postDelayed({ MessageStore.endFinalQuestion(this) }, THANKS_MS)
+                showChosen(seat)
             }
         }
+    }
+
+    /**
+     * Their pick, held large with the name underneath. This is the reveal the
+     * host walks around the table for, so it stays put until the next round.
+     */
+    private fun showChosen(seat: Int) {
+        val table = MessageStore.getActiveTable(this)
+        val person = Tables.player(this, table, seat) ?: return
+        finalQuestionText.visibility = View.GONE
+        voteScroll.visibility = View.GONE
+        doneButton.visibility = View.GONE
+        finalThanks.visibility = View.GONE
+        chosenName.text = person.name
+        chosenAvatar.setImageDrawable(circularAvatar(person.avatarRes))
+        chosenGroup.visibility = View.VISIBLE
+        chosenGroup.alpha = 0f
+        chosenGroup.animate()
+            .alpha(1f)
+            .setDuration(REVEAL_FADE_MS)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
     }
 
     // ---- video -------------------------------------------------------------

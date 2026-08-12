@@ -24,4 +24,6 @@
     <dimen name="done_button_padding_h">56dp</dimen>
     <dimen name="done_button_padding_v">22dp</dimen>
     <dimen name="final_padding_v">28dp</dimen>
+    <dimen name="chosen_avatar_size">420dp</dimen>
+    <dimen name="chosen_name_size">72sp</dimen>
 </resources>

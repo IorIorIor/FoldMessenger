@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Selection badge on a chosen dater. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,2A22,22 0 1,1 24,46A22,22 0 1,1 24,2z" />
+    <path
+        android:fillColor="#1B34C8"
+        android:pathData="M21.5,32.4l-7.2,-7.2l2.9,-2.9l4.3,4.3l10,-10l2.9,2.9z" />
+</vector>

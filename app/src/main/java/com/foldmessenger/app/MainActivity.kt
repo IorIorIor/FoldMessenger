@@ -31,6 +31,7 @@ import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.animation.DecelerateInterpolator
 import android.view.animation.LinearInterpolator
 import android.view.WindowManager
 import android.widget.Button
@@ -38,6 +39,7 @@ import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
@@ -75,11 +77,22 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bylineCardName: TextView
     private lateinit var coverTitle: TextView
     private lateinit var idleLabel: TextView
+    private lateinit var finalGroup: View
+    private lateinit var finalQuestionText: TextView
+    private lateinit var voteGrid: GridLayout
+    private lateinit var doneButton: Button
+    private lateinit var finalThanks: TextView
+    private lateinit var setupTitle: TextView
 
     private var player: MediaPlayer? = null
     private var pendingVideoPath: String? = null
     private var titleTyper: ValueAnimator? = null
     private var showingTeaser = false
+    private var showingReveal = false
+    private var showingFinal = false
+    private val picked = linkedSetOf<Int>()
+    /** Set while the phone-picker is asking who is holding this handset. */
+    private var askingWhoAmI = false
 
     // Card sizing bounds, derived from the display the activity is currently on.
     private val maxCardWidth: Int
@@ -129,6 +142,12 @@ class MainActivity : AppCompatActivity() {
         bylineCardName = findViewById(R.id.byline_card_name)
         coverTitle = findViewById(R.id.cover_title)
         idleLabel = findViewById(R.id.idle_label)
+        finalGroup = findViewById(R.id.final_group)
+        finalQuestionText = findViewById(R.id.final_question)
+        voteGrid = findViewById(R.id.vote_grid)
+        doneButton = findViewById(R.id.btn_done)
+        finalThanks = findViewById(R.id.final_thanks)
+        setupTitle = findViewById(R.id.setup_title)
 
         applyCardCorners()
         bindSetupButtons()
@@ -191,6 +210,7 @@ class MainActivity : AppCompatActivity() {
     private fun bindSetupButtons() {
         val grid = findViewById<GridLayout>(R.id.phone_grid)
         grid.removeAllViews()
+        setupTitle.setText(R.string.setup_title)
         for (phoneId in 1..Config.PHONE_COUNT) {
             val button = layoutInflater
                 .inflate(R.layout.view_phone_button, grid, false) as Button
@@ -198,6 +218,31 @@ class MainActivity : AppCompatActivity() {
             button.setOnClickListener {
                 MessageStore.setPhoneId(this, phoneId)
                 PushService.start(this)
+                // straight on to "who is holding it", so the closing question
+                // knows whose face to leave out
+                askWhoAmI()
+            }
+            grid.addView(button)
+        }
+    }
+
+    /** Second setup step: which dater is on this handset. */
+    private fun askWhoAmI() {
+        askingWhoAmI = true
+        setupGroup.visibility = View.VISIBLE
+        viewerGroup.visibility = View.GONE
+        setupTitle.setText(R.string.setup_who)
+        val grid = findViewById<GridLayout>(R.id.phone_grid)
+        grid.removeAllViews()
+        Roster.all(this).forEach { person ->
+            val button = layoutInflater
+                .inflate(R.layout.view_phone_button, grid, false) as Button
+            button.text = person.name
+            button.textSize = 14f
+            button.setOnClickListener {
+                MessageStore.setOwnPersonId(this, person.id)
+                askingWhoAmI = false
+                bindSetupButtons()
                 maybePromptSpecialAccess()
                 render()
             }
@@ -212,16 +257,25 @@ class MainActivity : AppCompatActivity() {
             viewerGroup.visibility = View.GONE
             return
         }
+        if (askingWhoAmI) return // mid-setup; leave the picker up
+
         setupGroup.visibility = View.GONE
         viewerGroup.visibility = View.VISIBLE
 
         val isCover = resources.configuration.smallestScreenWidthDp < 600
+
+        if (MessageStore.isFinalQuestion(this)) {
+            showFinalQuestion(isCover)
+            return
+        }
+        finalGroup.visibility = View.GONE
 
         // Folding closed after the reveal ends the round: wipe the message
         if (isCover && MessageStore.isViewed(this)) {
             MessageStore.clear(this)
         }
 
+        showingFinal = false
         stopVideo()
         val message = MessageStore.getLastMessage(this)
         when {
@@ -232,6 +286,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showIdle(phoneId: Int) {
+        showingReveal = false
         stopTypingTitle()
         fx.show(FxBackground.IDLE)
         cardContainer.visibility = View.GONE
@@ -242,6 +297,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTeaser() {
+        showingReveal = false
         fx.show(FxBackground.NEW_REVEAL)
         cardContainer.visibility = View.GONE
         idleLabel.visibility = View.GONE
@@ -250,7 +306,7 @@ class MainActivity : AppCompatActivity() {
         // restart the typing
         if (!showingTeaser) {
             showingTeaser = true
-            typeCoverTitle()
+            typeTitle(getString(R.string.cover_title))
         }
     }
 
@@ -259,36 +315,46 @@ class MainActivity : AppCompatActivity() {
      * the start and the untyped tail is painted transparent, so the line breaks
      * and the block's position never shift while it types.
      */
-    private fun typeCoverTitle() {
-        val full = getString(R.string.cover_title)
+    private fun typeTitle(full: String) {
         titleTyper?.cancel()
-        titleTyper = ValueAnimator.ofInt(0, full.length).apply {
-            duration = full.length * MS_PER_LETTER
+        fitCoverTitle(full)
+        // Each letter runs its own short fade, staggered by MS_PER_LETTER, so the
+        // line appears to be written rather than switched on a character at a
+        // time. The whole string is laid out from the start and the not-yet-faded
+        // letters are drawn fully transparent, so nothing reflows while it runs.
+        val total = full.length * MS_PER_LETTER + LETTER_FADE_MS
+        titleTyper = ValueAnimator.ofFloat(0f, total.toFloat()).apply {
+            duration = total
             interpolator = LinearInterpolator()
             addUpdateListener { anim ->
-                val shown = anim.animatedValue as Int
-                coverTitle.text = if (shown >= full.length) full else {
-                    SpannableString(full).apply {
-                        setSpan(
-                            ForegroundColorSpan(Color.TRANSPARENT),
-                            shown, full.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                    }
+                val elapsed = anim.animatedValue as Float
+                val spanned = SpannableString(full)
+                for (i in full.indices) {
+                    if (full[i].isWhitespace()) continue
+                    val progress =
+                        ((elapsed - i * MS_PER_LETTER) / LETTER_FADE_MS).coerceIn(0f, 1f)
+                    spanned.setSpan(
+                        ForegroundColorSpan(
+                            Color.argb((progress * 255).toInt(), 255, 255, 255)
+                        ),
+                        i, i + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
                 }
+                coverTitle.text = spanned
             }
             start()
         }
     }
 
-    /**
-     * Always leaves the title fully opaque. A cancelled reveal must never strand
-     * the transparent span on screen, which would make the teaser look blank.
-     */
     private fun stopTypingTitle() {
         titleTyper?.cancel()
         titleTyper = null
         showingTeaser = false
-        coverTitle.text = getString(R.string.cover_title)
+        coverTitle.text = if (MessageStore.isFinalQuestion(this)) {
+            getString(R.string.cover_unfold)
+        } else {
+            getString(R.string.cover_title)
+        }
     }
 
     private fun showMessage(message: MessageStore.Message) {
@@ -350,6 +416,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         cardContainer.visibility = View.VISIBLE
+        // Fade in as the phone is opened. Only on arrival at the reveal, so a
+        // re-render while it is already on screen doesn't flash the card.
+        if (!showingReveal) {
+            showingReveal = true
+            cardContainer.alpha = 0f
+            cardContainer.animate()
+                .alpha(1f)
+                .setDuration(REVEAL_FADE_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
         MessageStore.markViewed(this)
         getSystemService(NotificationManager::class.java)
             .cancel(PushService.NOTIF_ID_MESSAGE)
@@ -382,6 +459,26 @@ class MainActivity : AppCompatActivity() {
             size -= step
         }
         return size
+    }
+
+    /**
+     * The teaser is set large on purpose, but "It’s time to unfold…" is a longer
+     * line than "New Secret!" and overruns a cover screen at that size. Step the
+     * type down only as far as the widest line needs, so each string is as big
+     * as it can be without wrapping.
+     */
+    private fun fitCoverTitle(text: String) {
+        val maxSize = resources.getDimension(R.dimen.cover_title_size)
+        val available = resources.displayMetrics.widthPixels * 0.92f
+        val paint = TextPaint(coverTitle.paint)
+        var size = maxSize
+        while (size > maxSize * 0.5f) {
+            paint.textSize = size
+            val widest = text.split("\n").maxOf { paint.measureText(it) }
+            if (widest <= available) break
+            size -= maxSize * 0.04f
+        }
+        coverTitle.setTextSize(TypedValue.COMPLEX_UNIT_PX, size)
     }
 
     /** Screen height left for the media once the caption has taken its share. */
@@ -494,6 +591,111 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.w(TAG, "Image decode failed: ${e.message}")
             null
+        }
+    }
+
+
+    // ---- closing question ---------------------------------------------------
+
+    /**
+     * Folded: a typed "It's time to unfold…" on the cover. Open: the question
+     * and the other daters' faces to choose from.
+     */
+    private fun showFinalQuestion(isCover: Boolean) {
+        stopTypingTitle()
+        cardContainer.visibility = View.GONE
+        idleLabel.visibility = View.GONE
+        showingReveal = false
+
+        if (isCover) {
+            fx.show(FxBackground.NEW_REVEAL)
+            finalGroup.visibility = View.GONE
+            coverTitle.visibility = View.VISIBLE
+            if (!showingTeaser) {
+                showingTeaser = true
+                typeTitle(getString(R.string.cover_unfold))
+            }
+            return
+        }
+
+        coverTitle.visibility = View.GONE
+        fx.show(FxBackground.TEXT_MESSAGE)
+
+        // An upgraded phone may never have been asked who is holding it; ask now
+        // rather than showing everyone including themselves.
+        if (MessageStore.getOwnPersonId(this) == 0) {
+            askWhoAmI()
+            return
+        }
+
+        if (!showingFinal) {
+            showingFinal = true
+            picked.clear()
+            buildVoteGrid()
+            finalQuestionText.setText(R.string.final_question)
+            finalQuestionText.visibility = View.VISIBLE
+            voteGrid.visibility = View.VISIBLE
+            doneButton.visibility = View.VISIBLE
+            doneButton.isEnabled = true
+            finalThanks.visibility = View.GONE
+            finalGroup.visibility = View.VISIBLE
+            finalGroup.alpha = 0f
+            finalGroup.animate()
+                .alpha(1f)
+                .setDuration(REVEAL_FADE_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        } else {
+            finalGroup.visibility = View.VISIBLE
+        }
+    }
+
+    /** Every dater except whoever is holding this phone. */
+    private fun buildVoteGrid() {
+        val own = MessageStore.getOwnPersonId(this)
+        voteGrid.removeAllViews()
+        Roster.all(this).filter { it.id != own }.forEach { person ->
+            val cell = layoutInflater.inflate(R.layout.view_vote_avatar, voteGrid, false)
+            val avatar = cell.findViewById<ImageView>(R.id.vote_avatar)
+            val check = cell.findViewById<ImageView>(R.id.vote_check)
+            cell.findViewById<TextView>(R.id.vote_name).text = person.name
+            avatar.setImageDrawable(circularAvatar(person.avatarRes))
+            avatar.alpha = UNPICKED_ALPHA
+            cell.setOnClickListener {
+                val nowPicked = if (picked.contains(person.id)) {
+                    picked.remove(person.id); false
+                } else {
+                    picked.add(person.id); true
+                }
+                check.visibility = if (nowPicked) View.VISIBLE else View.GONE
+                avatar.animate()
+                    .alpha(if (nowPicked) 1f else UNPICKED_ALPHA)
+                    .setDuration(140)
+                    .start()
+            }
+            voteGrid.addView(cell)
+        }
+        doneButton.setOnClickListener { submitPicks() }
+    }
+
+    private fun submitPicks() {
+        doneButton.isEnabled = false
+        VoteSender.submit(this, picked.toList()) { ok ->
+            runOnUiThread {
+                if (!ok) {
+                    // let them try again rather than silently losing the answer
+                    doneButton.isEnabled = true
+                    Toast.makeText(this, R.string.vote_failed, Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                finalQuestionText.visibility = View.GONE
+                voteGrid.visibility = View.GONE
+                doneButton.visibility = View.GONE
+                finalThanks.setText(R.string.final_thanks)
+                finalThanks.visibility = View.VISIBLE
+                // back to idle after a beat
+                finalGroup.postDelayed({ MessageStore.endFinalQuestion(this) }, THANKS_MS)
+            }
         }
     }
 
@@ -637,8 +839,20 @@ class MainActivity : AppCompatActivity() {
 
         private const val TAG = "MainActivity"
 
-        /** Typing speed of the cover-screen teaser. */
+        /** Stagger between letters of the cover-screen teaser. */
         private const val MS_PER_LETTER = 90L
+
+        /** How long each individual letter takes to fade up. */
+        private const val LETTER_FADE_MS = 260L
+
+        /** Fade of the secret as the phone is opened. */
+        private const val REVEAL_FADE_MS = 420L
+
+        /** How long "Bedankt!" stays up before the phone returns to idle. */
+        private const val THANKS_MS = 3_000L
+
+        /** Dimming on a dater who has not been picked. */
+        private const val UNPICKED_ALPHA = 0.45f
         private var promptedOverlay = false
         private var promptedBattery = false
         private var promptedInstall = false

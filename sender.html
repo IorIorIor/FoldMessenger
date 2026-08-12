@@ -58,6 +58,18 @@
     margin-top: 12px; background: transparent; color: #e77;
     border: 1px solid #633; font-weight: 500;
   }
+  button.accent {
+    margin-top: 12px; background: #2440e4; color: #fff;
+  }
+  #results { font-size: 14px; line-height: 1.6; }
+  #results .row {
+    display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid #333;
+  }
+  #results .row:first-child { border-top: 0; }
+  #results .who { color: #7c7; font-weight: 600; white-space: nowrap; }
+  #results .picks { color: #eee; }
+  #results .none { color: #888; font-style: italic; }
+  #results .waiting { color: #888; }
   #log { margin-top: 16px; font-size: 13px; line-height: 1.7; color: #aaa; white-space: pre-wrap; }
   .ok { color: #7c7; } .err { color: #e77; }
 </style>
@@ -102,7 +114,13 @@
 </fieldset>
 
 <button id="send">Send</button>
+<button id="finalq" class="accent">❓ SEND FINAL QUESTION</button>
 <button id="nextround" class="secondary">⏭ Next round — clear all phones</button>
+
+<fieldset id="resultsBox" hidden>
+  <legend>Antwoorden</legend>
+  <div id="results"></div>
+</fieldset>
 <div id="log"></div>
 
 <script>
@@ -115,8 +133,8 @@ const PHONE_COUNT = 6;   // keep in sync with Config.PHONE_COUNT in the app
 // res/values/roster.xml — position in this list is the id that gets sent.
 // Adding someone means updating both lists (and adding avatar_<n>.png).
 const ROSTER = [
-  "Charlotte", "Daan", "Emma", "Lucas",
-  "Sofie", "Milan", "Nora", "Tim"
+  "Charlotte", "Daan", "Emma",
+  "Lucas", "Sofie", "Milan"
 ];
 
 const personSelect = document.getElementById("person");
@@ -404,13 +422,74 @@ document.getElementById("send").addEventListener("click", async () => {
   }
 });
 
+// Admin: put every phone into the closing question, and watch the answers land.
+document.getElementById("finalq").addEventListener("click", async () => {
+  if (!confirm("Send the final question to ALL phones?")) return;
+  try {
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__FINALQUESTION__" });
+    if (res.ok) {
+      addLog(`✓ Final question sent ${new Date().toLocaleTimeString()}`, "ok");
+      startResults();
+    } else {
+      addLog(`✗ Final question — HTTP ${res.status}`, "err");
+    }
+  } catch (e) {
+    addLog(`✗ Final question — ${e.message}`, "err");
+  }
+});
+
+// Phones publish their picks to the votes topic; subscribe and render them live.
+let resultsStream = null;
+const answers = new Map();
+
+function startResults() {
+  document.getElementById("resultsBox").hidden = false;
+  renderResults();
+  if (resultsStream) return;
+  resultsStream = new EventSource(`${SERVER}/${TOPIC_BASE}-votes/sse`);
+  resultsStream.onmessage = (e) => {
+    let payload;
+    try { payload = JSON.parse(JSON.parse(e.data).message); } catch (_) { return; }
+    if (!payload || typeof payload.phone !== "number") return;
+    answers.set(payload.phone, payload);
+    renderResults();
+  };
+  resultsStream.onerror = () => addLog("⚠ Lost the results connection — retrying…", "err");
+}
+
+function renderResults() {
+  const el = document.getElementById("results");
+  el.innerHTML = "";
+  const seen = [...answers.keys()].sort((a, b) => a - b);
+  for (const phone of seen) {
+    const a = answers.get(phone);
+    const names = (a.pickNames || []).join(", ");
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span class="who">Phone ${phone}${a.personName ? " (" + a.personName + ")" : ""}</span>` +
+      (names ? `<span class="picks">${names}</span>` : `<span class="none">niemand gekozen</span>`);
+    el.appendChild(row);
+  }
+  const missing = PHONE_COUNT - seen.length;
+  if (missing > 0) {
+    const row = document.createElement("div");
+    row.className = "row waiting";
+    row.textContent = `wachten op ${missing} van de ${PHONE_COUNT} telefoons…`;
+    el.appendChild(row);
+  }
+}
+
 // Admin: wipe the current message on every phone; they all return to the idle image.
 // "__NEXTROUND__" is a control command understood by the app, not shown as a message.
 document.getElementById("nextround").addEventListener("click", async () => {
   if (!confirm("Start the next round? This clears the message on ALL phones.")) return;
   try {
     const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__NEXTROUND__" });
-    if (res.ok) addLog(`✓ Next round — all phones cleared ${new Date().toLocaleTimeString()}`, "ok");
+    if (res.ok) {
+      addLog(`✓ Next round — all phones cleared ${new Date().toLocaleTimeString()}`, "ok");
+      answers.clear();
+      renderResults();
+    }
     else addLog(`✗ Next round — HTTP ${res.status}`, "err");
   } catch (e) {
     addLog(`✗ Next round — ${e.message}`, "err");

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Unfolded inner screen -->
-    <dimen name="cover_title_size">72sp</dimen>
+    <dimen name="cover_title_size">122sp</dimen>
     <dimen name="card_text_size">68sp</dimen>
     <dimen name="name_text_size">39sp</dimen>
     <dimen name="card_padding">48dp</dimen>
@@ -15,4 +15,12 @@
     <dimen name="idle_label_size">14sp</dimen>
     <dimen name="idle_label_margin">28dp</dimen>
     <dimen name="phone_button_size">96dp</dimen>
+    <dimen name="final_question_size">44sp</dimen>
+    <dimen name="vote_avatar_size">180dp</dimen>
+    <dimen name="vote_check_size">56dp</dimen>
+    <dimen name="vote_name_size">26sp</dimen>
+    <dimen name="vote_cell_margin">18dp</dimen>
+    <dimen name="done_button_size">28sp</dimen>
+    <dimen name="done_button_padding_h">56dp</dimen>
+    <dimen name="done_button_padding_v">22dp</dimen>
 </resources>

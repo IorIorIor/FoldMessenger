@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One selectable dater in the closing question; inflated per person. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_margin="@dimen/vote_cell_margin"
+    android:gravity="center_horizontal"
+    android:orientation="vertical">
+
+    <FrameLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+        <ImageView
+            android:id="@+id/vote_avatar"
+            android:layout_width="@dimen/vote_avatar_size"
+            android:layout_height="@dimen/vote_avatar_size"
+            android:importantForAccessibility="no" />
+
+        <ImageView
+            android:id="@+id/vote_check"
+            android:layout_width="@dimen/vote_check_size"
+            android:layout_height="@dimen/vote_check_size"
+            android:layout_gravity="bottom|end"
+            android:src="@drawable/ic_check"
+            android:visibility="gone"
+            android:importantForAccessibility="no" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/vote_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:fontFamily="@font/apris_black"
+        android:textColor="@android:color/white"
+        android:textSize="@dimen/vote_name_size" />
+</LinearLayout>

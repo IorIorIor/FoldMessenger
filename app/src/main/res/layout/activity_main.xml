@@ -132,6 +132,59 @@
             </LinearLayout>
         </LinearLayout>
 
+
+        <!-- Closing question: pick the daters you'd like to know better -->
+        <LinearLayout
+            android:id="@+id/final_group"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="@dimen/card_padding"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/final_question"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/card_padding"
+                android:breakStrategy="simple"
+                android:fontFamily="@font/samsung_sharp_sans_bold"
+                android:gravity="center"
+                android:hyphenationFrequency="none"
+                android:textColor="@android:color/white"
+                android:textSize="@dimen/final_question_size" />
+
+            <GridLayout
+                android:id="@+id/vote_grid"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:columnCount="3" />
+
+            <Button
+                android:id="@+id/btn_done"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/card_padding"
+                android:background="@drawable/btn_done"
+                android:fontFamily="@font/samsung_sharp_sans_bold"
+                android:paddingHorizontal="@dimen/done_button_padding_h"
+                android:paddingVertical="@dimen/done_button_padding_v"
+                android:text="@string/done_button"
+                android:textColor="#111111"
+                android:textSize="@dimen/done_button_size" />
+
+            <TextView
+                android:id="@+id/final_thanks"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/samsung_sharp_sans_bold"
+                android:gravity="center"
+                android:textColor="@android:color/white"
+                android:textSize="@dimen/final_question_size"
+                android:visibility="gone" />
+        </LinearLayout>
+
         <!-- "New Secret!" teaser on the cover screen -->
         <TextView
             android:id="@+id/cover_title"
@@ -170,6 +223,7 @@
         android:padding="24dp">
 
         <TextView
+            android:id="@+id/setup_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"

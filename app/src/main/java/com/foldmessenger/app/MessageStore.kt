@@ -20,6 +20,8 @@ object MessageStore {
     private const val KEY_VIEWED = "viewed"
     private const val KEY_LAST_EVENT = "last_event_id"
     private const val KEY_LAST_EVENT_TIME = "last_event_time"
+    private const val KEY_OWN_PERSON = "own_person_id"
+    private const val KEY_FINAL_Q = "final_question"
 
     @Volatile
     var onMessageChanged: (() -> Unit)? = null
@@ -58,6 +60,32 @@ object MessageStore {
 
     fun setPhoneId(ctx: Context, id: Int) {
         prefs(ctx).edit().putInt(KEY_PHONE_ID, id).apply()
+    }
+
+    /** Roster id of the dater holding this handset; 0 until someone says. */
+    fun getOwnPersonId(ctx: Context): Int = prefs(ctx).getInt(KEY_OWN_PERSON, 0)
+
+    fun setOwnPersonId(ctx: Context, id: Int) {
+        prefs(ctx).edit().putInt(KEY_OWN_PERSON, id).apply()
+        Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
+    }
+
+    /** True while the closing question is running on this phone. */
+    fun isFinalQuestion(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_FINAL_Q, false)
+
+    fun startFinalQuestion(ctx: Context) {
+        getLastMessage(ctx)?.mediaPath?.let { File(it).delete() }
+        prefs(ctx).edit()
+            .putBoolean(KEY_FINAL_Q, true)
+            .remove(KEY_TEXT).remove(KEY_IMAGE).remove(KEY_MIME)
+            .remove(KEY_PERSON).remove(KEY_TIME).remove(KEY_VIEWED)
+            .apply()
+        Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
+    }
+
+    fun endFinalQuestion(ctx: Context) {
+        prefs(ctx).edit().putBoolean(KEY_FINAL_Q, false).apply()
+        Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
     }
 
     fun getLastMessage(ctx: Context): Message? {
@@ -102,6 +130,7 @@ object MessageStore {
             .remove(KEY_PERSON)
             .remove(KEY_TIME)
             .remove(KEY_VIEWED)
+            .putBoolean(KEY_FINAL_Q, false)
             .apply()
         Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
     }

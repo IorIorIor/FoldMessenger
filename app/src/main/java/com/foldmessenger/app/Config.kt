@@ -12,4 +12,7 @@ object Config {
 
     fun phoneTopic(id: Int) = "$TOPIC_BASE-p$id"
     fun allTopic() = "$TOPIC_BASE-all"
+
+    /** Where phones publish their answers to the final question. */
+    fun votesTopic() = "$TOPIC_BASE-votes"
 }

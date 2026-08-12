@@ -54,6 +54,9 @@ class PushService : Service() {
         /** Admin control message (sent by sender.html "Next round"): wipe all phones. */
         const val CMD_NEXT_ROUND = "__NEXTROUND__"
 
+        /** Admin control message: put every phone into the closing question. */
+        const val CMD_FINAL_QUESTION = "__FINALQUESTION__"
+
         /** Time given to the direct launch before falling back to a notification. */
         private const val VIEWER_LAUNCH_GRACE_MS = 700L
 
@@ -214,6 +217,16 @@ class PushService : Service() {
         val text = obj.optString("message", "")
         val attachment = obj.optJSONObject("attachment")
         val attachmentUrl = attachment?.optString("url")
+
+        if (text == CMD_FINAL_QUESTION && attachment == null) {
+            MessageStore.startFinalQuestion(this)
+            getSystemService(NotificationManager::class.java).cancel(NOTIF_ID_MESSAGE)
+            launchViewer()
+            handler.postDelayed({
+                if (MainActivity.isOnScreen) playAlert() else postMessageNotification()
+            }, VIEWER_LAUNCH_GRACE_MS)
+            return
+        }
 
         if (text == CMD_NEXT_ROUND && attachment == null) {
             MessageStore.clear(this)

@@ -5,6 +5,7 @@ import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import com.foldmessenger.app.Ntfy.withAuth
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -38,6 +39,7 @@ object VoteSender {
                 val request = Request.Builder()
                     .url("${Config.NTFY_SERVER}/${Config.votesTopic()}")
                     .post(body.toRequestBody())
+                    .withAuth()
                     .build()
                 client.newCall(request).execute().use { it.isSuccessful }
             } catch (e: Exception) {

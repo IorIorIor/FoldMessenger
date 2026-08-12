@@ -6,3 +6,4 @@ local.properties
 # release signing — lives locally and in GitHub Actions secrets, never in git
 foldmessenger-release.keystore
 keystore-password.txt
+ntfy-token.txt

@@ -19,10 +19,27 @@ sender.html ──HTTPS──> ntfy.sh (push service) ──WebSocket──> Fol
 - The person a secret belongs to travels in ntfy's `title` field as `p<roster position>`;
   the phone looks up the matching avatar and name from its own baked-in roster.
 
-⚠️ **ntfy.sh free tier has a daily bandwidth cap.** Heavy testing with full-size images
-already hit it once (`HTTP 413 attachment too large, or bandwidth limit reached`). Before
-a live event either keep attachments small (the sender compresses them), buy an ntfy plan,
-or self-host ntfy and change `NTFY_SERVER` in `Config.kt` and `SERVER` in `sender.html`.
+## The ntfy token
+
+Traffic is authenticated with an ntfy access token, which is what lifts the anonymous
+rate and bandwidth limits (Supporter tier: 25 MB per attachment, 500 MB stored,
+1 GB/day). Without it a busy night hits `HTTP 413 … bandwidth limit reached` and
+secrets simply stop arriving.
+
+**The token is never committed** — this repo is public. It lives in:
+
+- `ntfy-token.txt` in the repo root (git-ignored) for local builds
+- the `FM_NTFY_TOKEN` GitHub Actions secret for released builds
+- the admin's browser (`localStorage`) — paste it once into the token box in the sender
+
+⚠️ **ntfy tokens expire.** Check the expiry before an event:
+
+```bash
+curl -s -H "Authorization: Bearer $(cat ntfy-token.txt)" https://ntfy.sh/v1/account
+```
+
+If it has expired, mint a new one in the ntfy account settings, then update all three
+places above (and re-release the APK, since it is baked in at build time).
 
 ## Tables and players
 

@@ -29,6 +29,7 @@ jobs:
       - name: Build signed release APK
         env:
           FM_KEYSTORE_PASSWORD: ${{ secrets.FM_KEYSTORE_PASSWORD }}
+          FM_NTFY_TOKEN: ${{ secrets.FM_NTFY_TOKEN }}
         run: ./gradlew assembleRelease
 
       - name: Publish GitHub Release with APK

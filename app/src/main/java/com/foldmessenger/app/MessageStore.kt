@@ -103,6 +103,8 @@ object MessageStore {
 
     fun saveMessage(ctx: Context, text: String, mediaPath: String?, mime: String, personId: Int) {
         prefs(ctx).edit()
+            // a new secret ends the closing question: the admin has moved on
+            .putBoolean(KEY_FINAL_Q, false)
             .putString(KEY_TEXT, text)
             .putString(KEY_IMAGE, mediaPath)
             .putString(KEY_MIME, mime)

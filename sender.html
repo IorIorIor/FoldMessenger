@@ -33,6 +33,11 @@
     border: 1px solid #333; border-radius: 6px; padding: 10px; font-size: 15px; resize: vertical;
   }
   input[type=file] { font-size: 13px; color: #aaa; }
+  input#token {
+    width: 100%; background: #1c1c1c; color: #eee; border: 1px solid #333;
+    border-radius: 6px; padding: 10px; font-size: 15px;
+  }
+  #tokenState { margin-top: 8px; font-size: 13px; }
   .tables { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .tables button {
     width: 100%; padding: 12px 8px; font-size: 15px; font-weight: 600;
@@ -86,6 +91,13 @@
   <div class="phones" id="phones"></div>
 </fieldset>
 
+<fieldset id="tokenBox">
+  <legend>ntfy-token</legend>
+  <input type="password" id="token" placeholder="tk_… (eenmalig, blijft in deze browser)">
+  <button type="button" id="saveToken" class="linkbtn">Opslaan</button>
+  <div id="tokenState"></div>
+</fieldset>
+
 <fieldset>
   <legend>Tafel</legend>
   <div class="tables" id="tables"></div>
@@ -131,6 +143,36 @@ const PHONE_COUNT = 6;   // keep in sync with Config.PHONE_COUNT in the app
 
 // Tables of players, mirroring res/values/tables.xml in the app. Only the
 // count matters here — the phones hold the names and faces themselves.
+// The ntfy token lifts the anonymous rate and bandwidth limits. It is kept in
+// this browser only — never in the file, because the repo is public.
+let ntfyToken = localStorage.getItem("fm_ntfy_token") || "";
+
+function authHeaders(extra = {}) {
+  return ntfyToken ? { ...extra, Authorization: `Bearer ${ntfyToken}` } : extra;
+}
+
+// Subscriptions can't set headers, so ntfy takes the same value base64url-encoded
+// in an `auth` query parameter.
+function authQuery() {
+  if (!ntfyToken) return "";
+  const b64 = btoa(`Bearer ${ntfyToken}`).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `?auth=${b64}`;
+}
+
+function paintToken() {
+  const el = document.getElementById("tokenState");
+  el.textContent = ntfyToken ? "✓ token opgeslagen — hogere limieten actief" : "⚠ geen token — anonieme limieten";
+  el.className = ntfyToken ? "ok" : "err";
+  document.getElementById("token").value = ntfyToken;
+}
+document.getElementById("saveToken").addEventListener("click", () => {
+  ntfyToken = document.getElementById("token").value.trim();
+  localStorage.setItem("fm_ntfy_token", ntfyToken);
+  paintToken();
+  addLog(ntfyToken ? "✓ ntfy-token opgeslagen" : "Token gewist", ntfyToken ? "ok" : "err");
+});
+paintToken();
+
 const TABLE_COUNT = 3;
 let activeTable = Number(localStorage.getItem("fm_table") || 1);
 
@@ -156,7 +198,7 @@ async function selectTable(t) {
   localStorage.setItem("fm_table", String(t));
   paintTables();
   try {
-    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: `__TABLE__${t}` });
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: `__TABLE__${t}`, headers: authHeaders() });
     addLog(res.ok ? `✓ Tafel ${t} actief` : `✗ Tafel ${t} — HTTP ${res.status}`, res.ok ? "ok" : "err");
   } catch (e) {
     addLog(`✗ Tafel ${t} — ${e.message}`, "err");
@@ -237,7 +279,7 @@ function headerValue(text) {
   return words.join(" ");
 }
 
-const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;   // Supporter tier
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -253,7 +295,7 @@ function setFileInfo(file, detail = "") {
   const sizeText = formatBytes(file.size);
   const isTooLarge = file.size > MAX_ATTACHMENT_BYTES;
   const detailText = detail ? ` • ${detail}` : "";
-  el.textContent = `${file.name} • ${sizeText}${isTooLarge ? " • exceeds the 15 MB limit" : " • under the 15 MB limit"}${detailText}`;
+  el.textContent = `${file.name} • ${sizeText}${isTooLarge ? " • exceeds the 25 MB limit" : " • under the 25 MB limit"}${detailText}`;
   el.className = isTooLarge ? "err" : "ok";
 }
 function loadScript(src) {
@@ -404,7 +446,7 @@ document.getElementById("send").addEventListener("click", async () => {
     }
 
     if (file && file.size > MAX_ATTACHMENT_BYTES) {
-      addLog(`⚠ File too large — ${formatBytes(file.size)} exceeds the 15 MB limit.`, "err");
+      addLog(`⚠ Bestand te groot — ${formatBytes(file.size)} is meer dan 25 MB.`, "err");
       btn.disabled = false;
       btn.textContent = "Send";
       return;
@@ -414,11 +456,11 @@ document.getElementById("send").addEventListener("click", async () => {
       try {
         let res;
         if (file) {
-          const headers = { "X-Filename": (file.name || "secret").replace(/[^\x20-\x7e]/g, "_") };
+          const headers = authHeaders({ "X-Filename": (file.name || "secret").replace(/[^\x20-\x7e]/g, "_") });
           if (text) headers["X-Message"] = headerValue(text);
           res = await fetch(`${SERVER}/${t.topic}`, { method: "PUT", body: file, headers });
         } else {
-          res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text });
+          res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text, headers: authHeaders() });
         }
         if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
         else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");
@@ -436,7 +478,7 @@ document.getElementById("send").addEventListener("click", async () => {
 document.getElementById("finalq").addEventListener("click", async () => {
   if (!confirm("Send the final question to ALL phones?")) return;
   try {
-    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__FINALQUESTION__" });
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__FINALQUESTION__", headers: authHeaders() });
     if (res.ok) {
       addLog(`✓ Final question sent ${new Date().toLocaleTimeString()}`, "ok");
       startResults();
@@ -456,7 +498,7 @@ function startResults() {
   document.getElementById("resultsBox").hidden = false;
   renderResults();
   if (resultsStream) return;
-  resultsStream = new EventSource(`${SERVER}/${TOPIC_BASE}-votes/sse`);
+  resultsStream = new EventSource(`${SERVER}/${TOPIC_BASE}-votes/sse${authQuery()}`);
   resultsStream.onmessage = (e) => {
     let payload;
     try { payload = JSON.parse(JSON.parse(e.data).message); } catch (_) { return; }
@@ -494,7 +536,7 @@ function renderResults() {
 document.getElementById("nextround").addEventListener("click", async () => {
   if (!confirm("Start the next round? This clears the message on ALL phones.")) return;
   try {
-    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__NEXTROUND__" });
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__NEXTROUND__", headers: authHeaders() });
     if (res.ok) {
       addLog(`✓ Next round — all phones cleared ${new Date().toLocaleTimeString()}`, "ok");
       answers.clear();

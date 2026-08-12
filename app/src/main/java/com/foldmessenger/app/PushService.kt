@@ -29,6 +29,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import com.foldmessenger.app.Ntfy.withAuth
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
@@ -159,9 +160,13 @@ class PushService : Service() {
         // hiccups, doze), and without this anything published while it was down
         // would never arrive.
         val since = MessageStore.getLastEventTime(this)
-        val url = "${Config.NTFY_SERVER}/$topics/ws" + if (since > 0) "?since=$since" else ""
-        Log.i(TAG, "Connecting to $url")
-        val request = Request.Builder().url(url).build()
+        val query = buildList {
+            if (since > 0) add("since=$since")
+            Ntfy.authQueryParam()?.let { add(it) }
+        }.joinToString("&")
+        val url = "${Config.NTFY_SERVER}/$topics/ws" + if (query.isNotEmpty()) "?$query" else ""
+        Log.i(TAG, "Connecting to ${Config.NTFY_SERVER}/$topics/ws (since=$since, auth=${Ntfy.hasToken})")
+        val request = Request.Builder().url(url).withAuth().build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "WebSocket open")
@@ -336,7 +341,7 @@ class PushService : Service() {
 
     private fun downloadAttachment(url: String): String? {
         return try {
-            val request = Request.Builder().url(url).build()
+            val request = Request.Builder().url(url).withAuth().build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
                 val dir = File(filesDir, "messages").apply { mkdirs() }

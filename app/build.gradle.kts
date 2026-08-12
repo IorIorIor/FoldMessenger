@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 34
         // Overridable for one-off builds: ./gradlew assembleRelease -PfmVersionCode=8 -PfmVersionName=1.7.9
-        versionCode = (project.findProperty("fmVersionCode") as String?)?.toInt() ?: 15
-        versionName = (project.findProperty("fmVersionName") as String?) ?: "1.11.0"
+        versionCode = (project.findProperty("fmVersionCode") as String?)?.toInt() ?: 16
+        versionName = (project.findProperty("fmVersionName") as String?) ?: "1.12.0"
     }
 
     // One shared signing key for every build (local and CI), so phones can
@@ -50,6 +50,16 @@ android {
 
     buildFeatures {
         buildConfig = true
+    }
+
+    // ntfy access token: lifts the anonymous rate and bandwidth limits. Read
+    // from the gitignored ntfy-token.txt locally, or FM_NTFY_TOKEN in CI — it
+    // must never be committed, since this repo is public.
+    defaultConfig {
+        val ntfyToken = System.getenv("FM_NTFY_TOKEN")
+            ?: rootProject.file("ntfy-token.txt").takeIf { it.exists() }?.readText()?.trim()
+            ?: ""
+        buildConfigField("String", "NTFY_TOKEN", "\"$ntfyToken\"")
     }
 
     compileOptions {

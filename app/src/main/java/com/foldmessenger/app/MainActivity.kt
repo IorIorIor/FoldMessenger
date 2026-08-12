@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.provider.MediaStore
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.StaticLayout
@@ -41,12 +42,15 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
+import androidx.core.content.FileProvider
 import androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
 import androidx.core.view.WindowCompat
 import androidx.core.widget.TextViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import java.io.File
 
 /**
  * Single full-screen activity. Shows a phone-picker on first run, then acts as
@@ -79,6 +83,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chosenGroup: View
     private lateinit var chosenAvatar: ImageView
     private lateinit var chosenName: TextView
+    private lateinit var selfieGroup: View
+    private lateinit var selfieTitle: TextView
+    private lateinit var selfieButton: Button
     private lateinit var setupTitle: TextView
 
     private var player: MediaPlayer? = null
@@ -91,6 +98,13 @@ class MainActivity : AppCompatActivity() {
 
     /** The one dater picked in the closing question; null until they choose. */
     private var pickedSeat: Int? = null
+    private var selfieFile: File? = null
+
+    private val cameraLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) publishSelfie() else selfieButton.isEnabled = true
+    }
 
     // Card sizing bounds, derived from the display the activity is currently on.
     private val maxCardWidth: Int
@@ -145,6 +159,10 @@ class MainActivity : AppCompatActivity() {
         chosenGroup = findViewById(R.id.chosen_group)
         chosenAvatar = findViewById(R.id.chosen_avatar)
         chosenName = findViewById(R.id.chosen_name)
+        selfieGroup = findViewById(R.id.selfie_group)
+        selfieTitle = findViewById(R.id.selfie_title)
+        selfieButton = findViewById(R.id.btn_selfie)
+        selfieButton.setOnClickListener { takeSelfie() }
         setupTitle = findViewById(R.id.setup_title)
 
         applyCardCorners()
@@ -235,6 +253,12 @@ class MainActivity : AppCompatActivity() {
         viewerGroup.visibility = View.VISIBLE
 
         val isCover = resources.configuration.smallestScreenWidthDp < 600
+
+        if (MessageStore.isSelfieMode(this)) {
+            showSelfiePrompt()
+            return
+        }
+        selfieGroup.visibility = View.GONE
 
         if (MessageStore.isFinalQuestion(this)) {
             showFinalQuestion(isCover)
@@ -508,10 +532,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Tonight's selfie for a player, falling back to their preloaded photo. */
+    private fun faceOf(person: Tables.Player): Drawable? {
+        val selfie = Faces.get(this, MessageStore.getActiveTable(this), person.seat)
+        if (selfie != null) {
+            BitmapFactory.decodeFile(selfie.absolutePath)?.let { return circularBitmap(it) }
+        }
+        return circularAvatar(person.avatarRes)
+    }
+
     /** Centre-cropped circular avatar, so non-square photos still look right. */
     private fun circularAvatar(avatarRes: Int): Drawable? {
         if (avatarRes == 0) return null
         val src = BitmapFactory.decodeResource(resources, avatarRes) ?: return null
+        return circularBitmap(src)
+    }
+
+    private fun circularBitmap(src: Bitmap): Drawable {
         val side = minOf(src.width, src.height)
         val square = Bitmap.createBitmap(
             src, (src.width - side) / 2, (src.height - side) / 2, side, side
@@ -537,6 +574,61 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+
+    // ---- selfie round -------------------------------------------------------
+
+    private fun showSelfiePrompt() {
+        stopTypingTitle()
+        fx.show(FxBackground.TEXT_MESSAGE)
+        cardContainer.visibility = View.GONE
+        finalGroup.visibility = View.GONE
+        coverTitle.visibility = View.GONE
+        idleLabel.visibility = View.GONE
+        selfieTitle.setText(R.string.selfie_prompt)
+        selfieButton.isEnabled = true
+        selfieGroup.visibility = View.VISIBLE
+    }
+
+    /**
+     * Hands off to whatever camera app the phone has rather than building one:
+     * fewer moving parts on the night, and no camera permission to grant.
+     */
+    private fun takeSelfie() {
+        val dir = File(filesDir, "selfies").apply { mkdirs() }
+        val target = File(dir, "selfie.jpg")
+        selfieFile = target
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", target)
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        if (intent.resolveActivity(packageManager) == null) {
+            Toast.makeText(this, R.string.no_camera, Toast.LENGTH_LONG).show()
+            return
+        }
+        selfieButton.isEnabled = false
+        cameraLauncher.launch(intent)
+    }
+
+    private fun publishSelfie() {
+        val photo = selfieFile ?: return
+        if (!photo.exists() || photo.length() == 0L) {
+            selfieButton.isEnabled = true
+            return
+        }
+        SelfieSender.publish(this, photo) { ok ->
+            runOnUiThread {
+                if (ok) {
+                    selfieTitle.setText(R.string.selfie_sent)
+                    selfieGroup.postDelayed({ MessageStore.setSelfieMode(this, false) }, THANKS_MS)
+                } else {
+                    selfieButton.isEnabled = true
+                    Toast.makeText(this, R.string.selfie_failed, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     // ---- closing question ---------------------------------------------------
 
@@ -598,7 +690,7 @@ class MainActivity : AppCompatActivity() {
             val avatar = cell.findViewById<ImageView>(R.id.vote_avatar)
             val check = cell.findViewById<ImageView>(R.id.vote_check)
             cell.findViewById<TextView>(R.id.vote_name).text = person.name
-            avatar.setImageDrawable(circularAvatar(person.avatarRes))
+            avatar.setImageDrawable(faceOf(person))
             avatar.alpha = UNPICKED_ALPHA
             cell.setOnClickListener {
                 // exactly one second date: picking someone releases the last choice
@@ -660,7 +752,7 @@ class MainActivity : AppCompatActivity() {
         doneButton.visibility = View.GONE
         finalThanks.visibility = View.GONE
         chosenName.text = person.name
-        chosenAvatar.setImageDrawable(circularAvatar(person.avatarRes))
+        chosenAvatar.setImageDrawable(faceOf(person))
         chosenGroup.visibility = View.VISIBLE
         chosenGroup.alpha = 0f
         chosenGroup.animate()

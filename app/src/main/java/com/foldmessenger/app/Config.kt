@@ -18,4 +18,7 @@ object Config {
 
     /** Where phones publish their answers to the final question. */
     fun votesTopic() = "$TOPIC_BASE-votes"
+
+    /** Where phones share the selfies taken at the start of a round. */
+    fun facesTopic() = "$TOPIC_BASE-faces"
 }

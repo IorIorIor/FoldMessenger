@@ -165,6 +165,51 @@
                 android:visibility="gone" />
         </LinearLayout>
 
+        <!-- Selfie round: the phone's own camera app takes the picture -->
+        <LinearLayout
+            android:id="@+id/selfie_group"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="@dimen/card_padding"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/selfie_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/samsung_sharp_sans_bold"
+                android:gravity="center"
+                android:text="@string/selfie_prompt"
+                android:textColor="@android:color/white"
+                android:textSize="@dimen/final_question_size" />
+
+            <TextView
+                android:id="@+id/selfie_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:fontFamily="@font/samsung_sharp_sans_bold"
+                android:gravity="center"
+                android:text="@string/selfie_hint"
+                android:textColor="#B0FFFFFF"
+                android:textSize="@dimen/vote_name_size" />
+
+            <Button
+                android:id="@+id/btn_selfie"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/card_padding"
+                android:background="@drawable/btn_done"
+                android:fontFamily="@font/samsung_sharp_sans_bold"
+                android:paddingHorizontal="@dimen/done_button_padding_h"
+                android:paddingVertical="@dimen/done_button_padding_v"
+                android:text="@string/selfie_button"
+                android:textColor="#111111"
+                android:textSize="@dimen/done_button_size" />
+        </LinearLayout>
+
         <!-- "New Secret!" teaser on the cover screen -->
         <TextView
             android:id="@+id/cover_title"

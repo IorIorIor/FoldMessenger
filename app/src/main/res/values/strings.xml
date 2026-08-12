@@ -16,4 +16,10 @@
     <string name="done_button">KLAAR</string>
     <string name="setup_who">Wie is deze telefoon?</string>
     <string name="vote_failed">Versturen mislukt \u2014 probeer opnieuw</string>
+    <string name="selfie_prompt">Maak een selfie</string>
+    <string name="selfie_hint">Even lachen — dit wordt jouw foto vanavond</string>
+    <string name="selfie_button">CAMERA</string>
+    <string name="selfie_sent">Gelukt!</string>
+    <string name="selfie_failed">Versturen mislukt — probeer opnieuw</string>
+    <string name="no_camera">Geen camera-app gevonden</string>
 </resources>

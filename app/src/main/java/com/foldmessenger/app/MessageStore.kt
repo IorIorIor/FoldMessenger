@@ -22,6 +22,7 @@ object MessageStore {
     private const val KEY_LAST_EVENT_TIME = "last_event_time"
     private const val KEY_TABLE = "active_table"
     private const val KEY_FINAL_Q = "final_question"
+    private const val KEY_SELFIE = "selfie_mode"
 
     @Volatile
     var onMessageChanged: (() -> Unit)? = null
@@ -70,6 +71,14 @@ object MessageStore {
         Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
     }
 
+    /** True while this phone has been asked for a selfie. */
+    fun isSelfieMode(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_SELFIE, false)
+
+    fun setSelfieMode(ctx: Context, on: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_SELFIE, on).apply()
+        Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
+    }
+
     /** True while the closing question is running on this phone. */
     fun isFinalQuestion(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_FINAL_Q, false)
 
@@ -77,6 +86,7 @@ object MessageStore {
         getLastMessage(ctx)?.mediaPath?.let { File(it).delete() }
         prefs(ctx).edit()
             .putBoolean(KEY_FINAL_Q, true)
+            .putBoolean(KEY_SELFIE, false)
             .remove(KEY_TEXT).remove(KEY_IMAGE).remove(KEY_MIME)
             .remove(KEY_PERSON).remove(KEY_TIME).remove(KEY_VIEWED)
             .apply()
@@ -103,8 +113,10 @@ object MessageStore {
 
     fun saveMessage(ctx: Context, text: String, mediaPath: String?, mime: String, personId: Int) {
         prefs(ctx).edit()
-            // a new secret ends the closing question: the admin has moved on
+            // a new secret ends the closing question and any unfinished selfie:
+            // the admin has moved on, and no phone should be left stranded
             .putBoolean(KEY_FINAL_Q, false)
+            .putBoolean(KEY_SELFIE, false)
             .putString(KEY_TEXT, text)
             .putString(KEY_IMAGE, mediaPath)
             .putString(KEY_MIME, mime)
@@ -133,6 +145,7 @@ object MessageStore {
             .remove(KEY_TIME)
             .remove(KEY_VIEWED)
             .putBoolean(KEY_FINAL_Q, false)
+            .putBoolean(KEY_SELFIE, false)
             .apply()
         Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
     }

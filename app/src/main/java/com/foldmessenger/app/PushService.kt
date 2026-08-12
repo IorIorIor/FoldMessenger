@@ -58,6 +58,12 @@ class PushService : Service() {
         /** Admin control message: put every phone into the closing question. */
         const val CMD_FINAL_QUESTION = "__FINALQUESTION__"
 
+        /** Admin control message: ask every phone for a fresh selfie. */
+        const val CMD_SELFIE = "__SELFIE__"
+
+        /** A shared selfie, titled "face:<table>:<seat>". */
+        private val FACE_MESSAGE = Regex("^face:(\\d+):(\\d+)$")
+
         /** Admin control message "__TABLE__2": switch every phone to that table. */
         private val TABLE_COMMAND = Regex("^__TABLE__(\\d+)$")
 
@@ -155,7 +161,7 @@ class PushService : Service() {
 
     private fun connect(phoneId: Int) {
         connectedPhoneId = phoneId
-        val topics = "${Config.phoneTopic(phoneId)},${Config.allTopic()}"
+        val topics = "${Config.phoneTopic(phoneId)},${Config.allTopic()},${Config.facesTopic()}"
         // Resume from the last event we saw: the socket drops regularly (Wi-Fi
         // hiccups, doze), and without this anything published while it was down
         // would never arrive.
@@ -225,6 +231,30 @@ class PushService : Service() {
         val text = obj.optString("message", "")
         val attachment = obj.optJSONObject("attachment")
         val attachmentUrl = attachment?.optString("url")
+        val title = obj.optString("title", "").trim()
+
+        // Somebody's selfie: cache it against their seat and show nothing.
+        FACE_MESSAGE.find(title)?.let { match ->
+            if (!attachmentUrl.isNullOrEmpty()) {
+                val table = match.groupValues[1].toInt()
+                val seat = match.groupValues[2].toInt()
+                downloadBytes(attachmentUrl)?.let { bytes ->
+                    Faces.save(this, table, seat, bytes)
+                    Log.i(TAG, "Cached selfie for table $table seat $seat")
+                    handler.post { MessageStore.onMessageChanged?.invoke() }
+                }
+            }
+            return
+        }
+
+        if (text == CMD_SELFIE && attachment == null) {
+            MessageStore.setSelfieMode(this, true)
+            launchViewer()
+            handler.postDelayed({
+                if (MainActivity.isOnScreen) playAlert() else postMessageNotification()
+            }, VIEWER_LAUNCH_GRACE_MS)
+            return
+        }
 
         TABLE_COMMAND.find(text)?.let { match ->
             if (attachment == null) {
@@ -279,10 +309,7 @@ class PushService : Service() {
             mime = "video/mp4"
         }
 
-        // The sender puts the roster position in ntfy's title field as "p<id>".
-        val personId = Regex("^p(\\d+)$")
-            .find(obj.optString("title", "").trim())
-            ?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val personId = 0 // secrets carry their own artwork; nobody is named
 
         MessageStore.saveMessage(this, displayText, mediaPath, mime, personId)
         // Only skip the notification when the viewer is demonstrably already on
@@ -337,6 +364,17 @@ class PushService : Service() {
                 Log.w(TAG, "Alert sound failed: ${e.message}")
             }
         }
+    }
+
+    /** Raw bytes of an attachment, for things cached in memory rather than shown. */
+    private fun downloadBytes(url: String): ByteArray? = try {
+        val request = Request.Builder().url(url).withAuth().build()
+        client.newCall(request).execute().use { response ->
+            if (response.isSuccessful) response.body?.bytes() else null
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "Selfie download failed: ${e.message}")
+        null
     }
 
     private fun downloadAttachment(url: String): String? {

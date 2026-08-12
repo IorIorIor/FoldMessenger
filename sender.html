@@ -126,6 +126,7 @@
 </fieldset>
 
 <button id="send">Send</button>
+<button id="selfies" class="accent">📸 VRAAG SELFIES</button>
 <button id="finalq" class="accent">❓ SEND FINAL QUESTION</button>
 <button id="nextround" class="secondary">⏭ Next round — clear all phones</button>
 
@@ -471,6 +472,20 @@ document.getElementById("send").addEventListener("click", async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = "Send";
+  }
+});
+
+// Admin: ask every phone for a fresh selfie at the start of a table's round.
+document.getElementById("selfies").addEventListener("click", async () => {
+  if (!confirm("Alle telefoons om een selfie vragen?")) return;
+  try {
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, {
+      method: "POST", body: "__SELFIE__", headers: authHeaders()
+    });
+    addLog(res.ok ? `✓ Selfies gevraagd ${new Date().toLocaleTimeString()}`
+                  : `✗ Selfies — HTTP ${res.status}`, res.ok ? "ok" : "err");
+  } catch (e) {
+    addLog(`✗ Selfies — ${e.message}`, "err");
   }
 });
 

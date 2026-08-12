@@ -20,7 +20,7 @@ object MessageStore {
     private const val KEY_VIEWED = "viewed"
     private const val KEY_LAST_EVENT = "last_event_id"
     private const val KEY_LAST_EVENT_TIME = "last_event_time"
-    private const val KEY_OWN_PERSON = "own_person_id"
+    private const val KEY_TABLE = "active_table"
     private const val KEY_FINAL_Q = "final_question"
 
     @Volatile
@@ -62,11 +62,11 @@ object MessageStore {
         prefs(ctx).edit().putInt(KEY_PHONE_ID, id).apply()
     }
 
-    /** Roster id of the dater holding this handset; 0 until someone says. */
-    fun getOwnPersonId(ctx: Context): Int = prefs(ctx).getInt(KEY_OWN_PERSON, 0)
+    /** Table currently in play; defaults to the first. */
+    fun getActiveTable(ctx: Context): Int = prefs(ctx).getInt(KEY_TABLE, 1)
 
-    fun setOwnPersonId(ctx: Context, id: Int) {
-        prefs(ctx).edit().putInt(KEY_OWN_PERSON, id).apply()
+    fun setActiveTable(ctx: Context, table: Int) {
+        prefs(ctx).edit().putInt(KEY_TABLE, table).apply()
         Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
     }
 

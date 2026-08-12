@@ -5,6 +5,7 @@ import android.util.Log
 import android.view.View
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebView
+import android.webkit.WebSettings
 import android.webkit.WebViewClient
 
 /**
@@ -25,6 +26,9 @@ class FxBackground(private val webView: WebView) {
 
     init {
         webView.settings.javaScriptEnabled = true
+        // Never serve a stale copy of the page: the shader states are baked into
+        // it, so a cached build would keep showing the old look after an update.
+        webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
         // matches the page's own CSS background, so there is no white flash
         // between the WebView attaching and the first rendered frame
         webView.setBackgroundColor(BASE_COLOR)
@@ -89,7 +93,9 @@ class FxBackground(private val webView: WebView) {
         const val NEW_REVEAL = "NEW REVEAL"
 
         private const val TAG = "FxBackground"
-        private const val PAGE_URL = "file:///android_asset/heart-view.html"
+        /** Version-stamped so an app update can never reuse the cached page. */
+        private val PAGE_URL =
+            "file:///android_asset/heart-view.html?v=${BuildConfig.VERSION_CODE}"
         private val BASE_COLOR = Color.parseColor("#14081f")
     }
 }

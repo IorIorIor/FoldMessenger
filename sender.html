@@ -33,10 +33,12 @@
     border: 1px solid #333; border-radius: 6px; padding: 10px; font-size: 15px; resize: vertical;
   }
   input[type=file] { font-size: 13px; color: #aaa; }
-  select#person {
-    width: 100%; background: #1c1c1c; color: #eee; border: 1px solid #333;
-    border-radius: 6px; padding: 10px; font-size: 15px;
+  .tables { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tables button {
+    width: 100%; padding: 12px 8px; font-size: 15px; font-weight: 600;
+    background: #1c1c1c; color: #eee; border: 1px solid #333; border-radius: 6px;
   }
+  .tables button.active { background: #2a3a2a; border-color: #4a8a4a; color: #fff; }
   label.inline {
     display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: 13px; color: #aaa;
   }
@@ -76,7 +78,7 @@
 </head>
 <body>
 <h1>📨 Fold Messenger</h1>
-<p class="sub">Send text + image to the Fold phones</p>
+<p class="sub">Stuur een vooraf gemaakt secret naar de Fold-telefoons</p>
 
 <fieldset>
   <legend>To</legend>
@@ -85,19 +87,17 @@
 </fieldset>
 
 <fieldset>
-  <legend>Whose secret is it?</legend>
-  <select id="person">
-    <option value="">— pick a person —</option>
-  </select>
+  <legend>Tafel</legend>
+  <div class="tables" id="tables"></div>
 </fieldset>
 
 <fieldset>
-  <legend>Message</legend>
-  <textarea id="text" placeholder="Type your message… (optional if sending an image)"></textarea>
+  <legend>Bericht (optioneel)</legend>
+  <textarea id="text" placeholder="Tekst bij het secret… (optioneel)"></textarea>
 </fieldset>
 
 <fieldset>
-  <legend>Image / video</legend>
+  <legend>Secret (afbeelding of video)</legend>
   <input type="file" id="file" accept="image/*,video/*">
   <button type="button" id="clearfile" class="linkbtn" hidden>✕ Remove file</button>
   <label class="inline" for="imageCompression">
@@ -129,21 +129,40 @@ const TOPIC_BASE = "fm-pw3h5q3z";
 const SERVER = "https://ntfy.sh";
 const PHONE_COUNT = 6;   // keep in sync with Config.PHONE_COUNT in the app
 
-// The cast of people, in the same order as roster_names in the app's
-// res/values/roster.xml — position in this list is the id that gets sent.
-// Adding someone means updating both lists (and adding avatar_<n>.png).
-const ROSTER = [
-  "Charlotte", "Daan", "Emma",
-  "Lucas", "Sofie", "Milan"
-];
+// Tables of players, mirroring res/values/tables.xml in the app. Only the
+// count matters here — the phones hold the names and faces themselves.
+const TABLE_COUNT = 3;
+let activeTable = Number(localStorage.getItem("fm_table") || 1);
 
-const personSelect = document.getElementById("person");
-ROSTER.forEach((name, i) => {
-  const opt = document.createElement("option");
-  opt.value = String(i + 1);
-  opt.textContent = name;
-  personSelect.appendChild(opt);
-});
+const tablesDiv = document.getElementById("tables");
+for (let t = 1; t <= TABLE_COUNT; t++) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = `Tafel ${t}`;
+  b.dataset.table = String(t);
+  b.addEventListener("click", () => selectTable(t));
+  tablesDiv.appendChild(b);
+}
+
+function paintTables() {
+  document.querySelectorAll("#tables button").forEach(b => {
+    b.classList.toggle("active", Number(b.dataset.table) === activeTable);
+  });
+}
+
+// Tell every phone which table is in play; they look up their own player from it.
+async function selectTable(t) {
+  activeTable = t;
+  localStorage.setItem("fm_table", String(t));
+  paintTables();
+  try {
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: `__TABLE__${t}` });
+    addLog(res.ok ? `✓ Tafel ${t} actief` : `✗ Tafel ${t} — HTTP ${res.status}`, res.ok ? "ok" : "err");
+  } catch (e) {
+    addLog(`✗ Tafel ${t} — ${e.message}`, "err");
+  }
+}
+paintTables();
 
 const phonesDiv = document.getElementById("phones");
 for (let i = 1; i <= PHONE_COUNT; i++) {
@@ -346,13 +365,11 @@ function addLog(msg, cls) {
 
 document.getElementById("send").addEventListener("click", async () => {
   const text = document.getElementById("text").value.trim();
-  const personId = personSelect.value;
   let file = fileInput.files[0];
   const to = targets();
 
-  if (to.length === 0) { addLog("⚠ Select at least one phone.", "err"); return; }
-  if (!personId) { addLog("⚠ Pick whose secret this is.", "err"); return; }
-  if (!text && !file) { addLog("⚠ Type a message or attach an image/video.", "err"); return; }
+  if (to.length === 0) { addLog("⚠ Kies minstens één telefoon.", "err"); return; }
+  if (!text && !file) { addLog("⚠ Kies een afbeelding/video of typ een tekst.", "err"); return; }
 
   const btn = document.getElementById("send");
   btn.disabled = true;
@@ -396,19 +413,12 @@ document.getElementById("send").addEventListener("click", async () => {
     for (const t of to) {
       try {
         let res;
-        // The roster position rides along in ntfy's title field; the app reads it
-        // back out to pick the avatar and name for the card.
         if (file) {
-          const headers = {
-            "X-Filename": (file.name || "image").replace(/[^\x20-\x7e]/g, "_"),
-            "X-Title": `p${personId}`
-          };
+          const headers = { "X-Filename": (file.name || "secret").replace(/[^\x20-\x7e]/g, "_") };
           if (text) headers["X-Message"] = headerValue(text);
           res = await fetch(`${SERVER}/${t.topic}`, { method: "PUT", body: file, headers });
         } else {
-          res = await fetch(`${SERVER}/${t.topic}`, {
-            method: "POST", body: text, headers: { "X-Title": `p${personId}` }
-          });
+          res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text });
         }
         if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
         else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");

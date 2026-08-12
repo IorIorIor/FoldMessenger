@@ -24,20 +24,35 @@ already hit it once (`HTTP 413 attachment too large, or bandwidth limit reached`
 a live event either keep attachments small (the sender compresses them), buy an ntfy plan,
 or self-host ntfy and change `NTFY_SERVER` in `Config.kt` and `SERVER` in `sender.html`.
 
-## The roster (avatars + names)
+## Tables and players
 
-The cast of people a secret can be attributed to is baked into the APK. To change it:
+Three tables of six players are baked into the APK. Only one is in play at a
+time: the admin picks a table in the sender and every phone follows.
 
-1. edit `roster_names` in `app/src/main/res/values/roster.xml`
-2. drop a square photo in as `app/src/main/res/drawable-nodpi/avatar_<n>.png`, where `<n>`
-   is the 1-based position of that name in the list
-3. mirror the same names, in the same order, in the `ROSTER` array in `sender.html`
-4. rebuild and release
+A player's seat **is** their phone number — the first name at a table is on
+phone 1 — so a handset works out who is holding it from its own number, with
+nothing to set up on the night. That mapping is what lets the closing question
+leave your own face out and label your answer.
 
-The avatars currently in the repo are **placeholders** (coloured circles with an initial) —
-replace them with the real photos. Avatars are centre-cropped to a circle, so square
-images look best. The list length is driven by the names array: add a 9th name plus
-`avatar_9.png` and it appears with no code change.
+To swap in the real cast:
+
+1. edit the three `table_<n>_names` arrays in `app/src/main/res/values/tables.xml`,
+   keeping six names per table, in phone order
+2. drop square photos in as
+   `app/src/main/res/drawable-nodpi/avatar_t<table>_p<phone>.png`
+   (`avatar_t2_p3.png` is the third player at table two — the one on phone 3)
+3. rebuild and release
+
+The 18 faces currently in the repo are **placeholders** (coloured circles with an
+initial). Avatars are centre-cropped to a circle, so square images look best.
+
+## Sending secrets
+
+Secrets are made in advance: the text, name and avatar are part of the artwork,
+so the sender only picks phones and uploads the image or video. The optional text
+box adds a caption underneath. A photo or clip is shown at about 60% of the
+screen, floating on the live shader background; add a caption and the card comes
+back behind it so the words have something to sit on.
 
 ## Background
 

@@ -22,13 +22,15 @@ object VoteSender {
     /** Fire-and-forget; [onResult] is called on a background thread. */
     fun submit(ctx: Context, picks: List<Int>, onResult: (Boolean) -> Unit) {
         val phoneId = MessageStore.getPhoneId(ctx)
-        val ownPersonId = MessageStore.getOwnPersonId(ctx)
+        val table = MessageStore.getActiveTable(ctx)
+        val self = Tables.player(ctx, table, phoneId)
         val body = JSONObject().apply {
             put("phone", phoneId)
-            put("person", ownPersonId)
-            put("personName", Roster.byId(ctx, ownPersonId)?.name ?: "")
+            put("table", table)
+            put("person", self?.seat ?: 0)
+            put("personName", self?.name ?: "")
             put("picks", JSONArray(picks))
-            put("pickNames", JSONArray(picks.mapNotNull { Roster.byId(ctx, it)?.name }))
+            put("pickNames", JSONArray(picks.mapNotNull { Tables.player(ctx, table, it)?.name }))
         }.toString()
 
         executor.execute {

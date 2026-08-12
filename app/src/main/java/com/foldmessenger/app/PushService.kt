@@ -57,6 +57,9 @@ class PushService : Service() {
         /** Admin control message: put every phone into the closing question. */
         const val CMD_FINAL_QUESTION = "__FINALQUESTION__"
 
+        /** Admin control message "__TABLE__2": switch every phone to that table. */
+        private val TABLE_COMMAND = Regex("^__TABLE__(\\d+)$")
+
         /** Time given to the direct launch before falling back to a notification. */
         private const val VIEWER_LAUNCH_GRACE_MS = 700L
 
@@ -217,6 +220,17 @@ class PushService : Service() {
         val text = obj.optString("message", "")
         val attachment = obj.optJSONObject("attachment")
         val attachmentUrl = attachment?.optString("url")
+
+        TABLE_COMMAND.find(text)?.let { match ->
+            if (attachment == null) {
+                val table = match.groupValues[1].toIntOrNull()
+                if (table != null && table in 1..Config.TABLE_COUNT) {
+                    Log.i(TAG, "Switching to table $table")
+                    MessageStore.setActiveTable(this, table)
+                }
+                return
+            }
+        }
 
         if (text == CMD_FINAL_QUESTION && attachment == null) {
             MessageStore.startFinalQuestion(this)

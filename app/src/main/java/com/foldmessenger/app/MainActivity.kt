@@ -67,14 +67,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mediaBlock: View
     private lateinit var mediaImage: ImageView
     private lateinit var mediaVideo: TextureView
-    private lateinit var mediaScrim: View
-    private lateinit var bylineMedia: View
-    private lateinit var bylineMediaAvatar: ImageView
-    private lateinit var bylineMediaName: TextView
     private lateinit var cardText: TextView
-    private lateinit var bylineCard: View
-    private lateinit var bylineCardAvatar: ImageView
-    private lateinit var bylineCardName: TextView
     private lateinit var coverTitle: TextView
     private lateinit var idleLabel: TextView
     private lateinit var finalGroup: View
@@ -86,19 +79,21 @@ class MainActivity : AppCompatActivity() {
 
     private var player: MediaPlayer? = null
     private var pendingVideoPath: String? = null
+    private var cardBackground: CardBackground? = null
     private var titleTyper: ValueAnimator? = null
     private var showingTeaser = false
     private var showingReveal = false
     private var showingFinal = false
     private val picked = linkedSetOf<Int>()
-    /** Set while the phone-picker is asking who is holding this handset. */
-    private var askingWhoAmI = false
 
     // Card sizing bounds, derived from the display the activity is currently on.
     private val maxCardWidth: Int
         get() = (resources.displayMetrics.widthPixels * 0.88f).toInt()
+
+    // The artwork already carries its own text and byline, so it is shown on its
+    // own at roughly 60% of the screen, floating on the shader.
     private val maxMediaWidth: Int
-        get() = (resources.displayMetrics.widthPixels * 0.80f).toInt()
+        get() = (resources.displayMetrics.widthPixels * MEDIA_SCREEN_FRACTION).toInt()
 
     /** Height budget for the media, set per message before showMedia() runs. */
     private var maxMediaHeight = 0
@@ -132,14 +127,7 @@ class MainActivity : AppCompatActivity() {
         mediaBlock = findViewById(R.id.media_block)
         mediaImage = findViewById(R.id.media_image)
         mediaVideo = findViewById(R.id.media_video)
-        mediaScrim = findViewById(R.id.media_scrim)
-        bylineMedia = findViewById(R.id.byline_media)
-        bylineMediaAvatar = findViewById(R.id.byline_media_avatar)
-        bylineMediaName = findViewById(R.id.byline_media_name)
         cardText = findViewById(R.id.card_text)
-        bylineCard = findViewById(R.id.byline_card)
-        bylineCardAvatar = findViewById(R.id.byline_card_avatar)
-        bylineCardName = findViewById(R.id.byline_card_name)
         coverTitle = findViewById(R.id.cover_title)
         idleLabel = findViewById(R.id.idle_label)
         finalGroup = findViewById(R.id.final_group)
@@ -157,7 +145,8 @@ class MainActivity : AppCompatActivity() {
     /** Rounded card, with the media clipped to the same corners. */
     private fun applyCardCorners() {
         val radius = resources.getDimension(R.dimen.card_corner_radius)
-        cardContainer.background = CardBackground(radius)
+        cardBackground = CardBackground(radius)
+        cardContainer.background = cardBackground
         cardContainer.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
                 outline.setRoundRect(0, 0, view.width, view.height, radius)
@@ -218,31 +207,6 @@ class MainActivity : AppCompatActivity() {
             button.setOnClickListener {
                 MessageStore.setPhoneId(this, phoneId)
                 PushService.start(this)
-                // straight on to "who is holding it", so the closing question
-                // knows whose face to leave out
-                askWhoAmI()
-            }
-            grid.addView(button)
-        }
-    }
-
-    /** Second setup step: which dater is on this handset. */
-    private fun askWhoAmI() {
-        askingWhoAmI = true
-        setupGroup.visibility = View.VISIBLE
-        viewerGroup.visibility = View.GONE
-        setupTitle.setText(R.string.setup_who)
-        val grid = findViewById<GridLayout>(R.id.phone_grid)
-        grid.removeAllViews()
-        Roster.all(this).forEach { person ->
-            val button = layoutInflater
-                .inflate(R.layout.view_phone_button, grid, false) as Button
-            button.text = person.name
-            button.textSize = 14f
-            button.setOnClickListener {
-                MessageStore.setOwnPersonId(this, person.id)
-                askingWhoAmI = false
-                bindSetupButtons()
                 maybePromptSpecialAccess()
                 render()
             }
@@ -257,8 +221,6 @@ class MainActivity : AppCompatActivity() {
             viewerGroup.visibility = View.GONE
             return
         }
-        if (askingWhoAmI) return // mid-setup; leave the picker up
-
         setupGroup.visibility = View.GONE
         viewerGroup.visibility = View.VISIBLE
 
@@ -361,63 +323,57 @@ class MainActivity : AppCompatActivity() {
         stopTypingTitle()
         coverTitle.visibility = View.GONE
         idleLabel.visibility = View.GONE
+        finalGroup.visibility = View.GONE
 
-        val person = Roster.byId(this, message.personId)
         val hasMedia = message.mediaPath != null
-        val hasCaption = message.text.isNotEmpty()
-        // a photo/clip gets the wider sliced aura; a text-only secret its own state
         fx.show(if (hasMedia) FxBackground.MEDIA_MESSAGE else FxBackground.TEXT_MESSAGE)
+
+        // Secrets are pre-made artwork, so a photo or clip is shown on its own —
+        // no card behind it, nothing overlaid. The card only survives as a
+        // fallback for a plain-text message.
+        val hasCaption = message.text.isNotEmpty()
         val pad = resources.getDimensionPixelSize(R.dimen.card_padding)
         val screenH = resources.displayMetrics.heightPixels
 
-        // Text first: it is the whole card on its own, and a caption under the
-        // media otherwise. sizeMediaBlock() narrows it to the photo's width once
-        // that is known, so the card ends up hugging the media.
-        if (hasCaption) {
-            // Start at the full display size and step down only as far as the
-            // text needs, so short secrets stay big and long ones still fit
-            // without eating the byline's room.
-            val textWidth = maxCardWidth - 2 * pad
-            val textBudget = if (hasMedia) {
-                (screenH * 0.40f).toInt()
+        if (hasMedia) {
+            // Bare artwork floats on the shader; add a caption and it needs the
+            // card behind it again so the words have something to sit on.
+            cardContainer.background = if (hasCaption) cardBackground else null
+            if (hasCaption) {
+                cardText.setTextSize(
+                    TypedValue.COMPLEX_UNIT_PX,
+                    fitTextSize(message.text, maxCardWidth - 2 * pad, (screenH * 0.25f).toInt())
+                )
+                cardText.layoutParams = cardText.layoutParams.apply { width = maxCardWidth }
+                cardText.maxWidth = maxCardWidth - 2 * pad
+                cardText.setPadding(pad, pad, pad, pad)
+                cardText.text = message.text
+                cardText.visibility = View.VISIBLE
+                maxMediaHeight = (screenH * MEDIA_SCREEN_FRACTION).toInt() -
+                    measureCaptionHeight(message.text, maxCardWidth) - 2 * pad
             } else {
-                (screenH * 0.86f).toInt() - bylineHeight() - 2 * pad
+                cardText.visibility = View.GONE
+                maxMediaHeight = (screenH * MEDIA_SCREEN_FRACTION).toInt()
             }
+            maxMediaHeight = maxMediaHeight.coerceAtLeast((screenH * 0.2f).toInt())
+            showMedia(message.mediaPath!!, message.mime)
+        } else {
+            cardContainer.background = cardBackground
+            mediaBlock.visibility = View.GONE
             cardText.setTextSize(
-                TypedValue.COMPLEX_UNIT_PX, fitTextSize(message.text, textWidth, textBudget)
+                TypedValue.COMPLEX_UNIT_PX,
+                fitTextSize(message.text, maxCardWidth - 2 * pad, (screenH * 0.80f).toInt())
             )
             cardText.layoutParams = cardText.layoutParams.apply {
-                width = if (hasMedia) maxCardWidth else ViewGroup.LayoutParams.WRAP_CONTENT
+                width = ViewGroup.LayoutParams.WRAP_CONTENT
             }
             cardText.maxWidth = maxCardWidth - 2 * pad
-            // as a caption it is the card's last element, so it needs its own
-            // bottom padding; text-only cards get that from the byline row below
-            cardText.setPadding(pad, pad, pad, if (hasMedia) pad else 0)
+            cardText.setPadding(pad, pad, pad, pad)
             cardText.text = message.text
             cardText.visibility = View.VISIBLE
-        } else {
-            cardText.visibility = View.GONE
-        }
-
-        // The media gets whatever height the caption leaves over, so the whole
-        // card always fits on screen.
-        maxMediaHeight = mediaHeightBudget(message.text, hasCaption, maxCardWidth)
-
-        if (hasMedia) {
-            showMedia(message.mediaPath!!, message.mime)
-            // the byline sits over the bottom of the photo, as in the design
-            bindByline(person, bylineMedia, bylineMediaAvatar, bylineMediaName)
-            mediaScrim.visibility = if (person != null) View.VISIBLE else View.GONE
-            bylineCard.visibility = View.GONE
-        } else {
-            mediaBlock.visibility = View.GONE
-            // …and under the text when there is no photo to sit on
-            bindByline(person, bylineCard, bylineCardAvatar, bylineCardName)
         }
 
         cardContainer.visibility = View.VISIBLE
-        // Fade in as the phone is opened. Only on arrival at the reveal, so a
-        // re-render while it is already on screen doesn't flash the card.
         if (!showingReveal) {
             showingReveal = true
             cardContainer.alpha = 0f
@@ -542,29 +498,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun bindByline(
-        person: Roster.Person?,
-        row: View,
-        avatar: ImageView,
-        name: TextView
-    ) {
-        if (person == null) {
-            row.visibility = View.GONE
-            return
-        }
-        name.text = person.name
-        // keep the name on one line even on a narrow photo
-        name.isSingleLine = true
-        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-            name, 12,
-            (resources.getDimension(R.dimen.name_text_size) /
-                resources.displayMetrics.scaledDensity).toInt().coerceAtLeast(13),
-            1, TypedValue.COMPLEX_UNIT_SP
-        )
-        avatar.setImageDrawable(circularAvatar(person.avatarRes))
-        row.visibility = View.VISIBLE
-    }
-
     /** Centre-cropped circular avatar, so non-square photos still look right. */
     private fun circularAvatar(avatarRes: Int): Drawable? {
         if (avatarRes == 0) return null
@@ -621,13 +554,6 @@ class MainActivity : AppCompatActivity() {
         coverTitle.visibility = View.GONE
         fx.show(FxBackground.TEXT_MESSAGE)
 
-        // An upgraded phone may never have been asked who is holding it; ask now
-        // rather than showing everyone including themselves.
-        if (MessageStore.getOwnPersonId(this) == 0) {
-            askWhoAmI()
-            return
-        }
-
         if (!showingFinal) {
             showingFinal = true
             picked.clear()
@@ -650,11 +576,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Every dater except whoever is holding this phone. */
+    /** Everyone at the table in play, except whoever is holding this phone. */
     private fun buildVoteGrid() {
-        val own = MessageStore.getOwnPersonId(this)
+        val table = MessageStore.getActiveTable(this)
+        val ownSeat = MessageStore.getPhoneId(this)
         voteGrid.removeAllViews()
-        Roster.all(this).filter { it.id != own }.forEach { person ->
+        Tables.players(this, table).filter { it.seat != ownSeat }.forEach { person ->
             val cell = layoutInflater.inflate(R.layout.view_vote_avatar, voteGrid, false)
             val avatar = cell.findViewById<ImageView>(R.id.vote_avatar)
             val check = cell.findViewById<ImageView>(R.id.vote_check)
@@ -662,10 +589,10 @@ class MainActivity : AppCompatActivity() {
             avatar.setImageDrawable(circularAvatar(person.avatarRes))
             avatar.alpha = UNPICKED_ALPHA
             cell.setOnClickListener {
-                val nowPicked = if (picked.contains(person.id)) {
-                    picked.remove(person.id); false
+                val nowPicked = if (picked.contains(person.seat)) {
+                    picked.remove(person.seat); false
                 } else {
-                    picked.add(person.id); true
+                    picked.add(person.seat); true
                 }
                 check.visibility = if (nowPicked) View.VISIBLE else View.GONE
                 avatar.animate()
@@ -853,6 +780,9 @@ class MainActivity : AppCompatActivity() {
 
         /** Dimming on a dater who has not been picked. */
         private const val UNPICKED_ALPHA = 0.45f
+
+        /** How much of the screen a secret's image or clip takes up. */
+        private const val MEDIA_SCREEN_FRACTION = 0.60f
         private var promptedOverlay = false
         private var promptedBattery = false
         private var promptedInstall = false

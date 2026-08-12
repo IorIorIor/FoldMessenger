@@ -3,35 +3,33 @@
   The three tables. Each has one player per handset, in phone order: the first
   name is phone 1, the second phone 2, and so on.
 
-  To swap in the real cast:
-    1. replace the names below, keeping six per table
-    2. drop square photos in as res/drawable-nodpi/avatar_t<table>_p<phone>.png
-       (avatar_t2_p3.png is the third player at table two)
-  Nothing else needs changing - the app reads the length of these lists.
+  To change a face, drop a square photo in as
+  res/drawable-nodpi/avatar_t<table>_p<phone>.png (avatar_t2_p3.png is Ben, the
+  third player at table two). Selfies taken on the night override these.
 -->
 <resources>
     <string-array name="table_1_names">
-        <item>Charlotte</item>
-        <item>Daan</item>
-        <item>Emma</item>
-        <item>Lucas</item>
-        <item>Sofie</item>
-        <item>Milan</item>
+        <item>Ferry</item>
+        <item>Ferdi</item>
+        <item>Bart</item>
+        <item>Marieke</item>
+        <item>Natascha</item>
+        <item>Sam</item>
     </string-array>
     <string-array name="table_2_names">
-        <item>Noor</item>
-        <item>Sem</item>
-        <item>Julia</item>
-        <item>Bram</item>
-        <item>Fleur</item>
-        <item>Thijs</item>
+        <item>Vanja</item>
+        <item>Ali</item>
+        <item>Ben</item>
+        <item>Femke</item>
+        <item>Laura</item>
+        <item>Jessemijne</item>
     </string-array>
     <string-array name="table_3_names">
-        <item>Isa</item>
-        <item>Ruben</item>
-        <item>Yara</item>
-        <item>Kai</item>
-        <item>Loes</item>
-        <item>Sven</item>
+        <item>Jermaine</item>
+        <item>Xander</item>
+        <item>Romano</item>
+        <item>Jeroen</item>
+        <item>Stef</item>
+        <item>Harald</item>
     </string-array>
 </resources>

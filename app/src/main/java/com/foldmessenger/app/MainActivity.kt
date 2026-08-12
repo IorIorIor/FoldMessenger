@@ -25,6 +25,7 @@ import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.util.Log
 import android.util.TypedValue
 import android.view.Surface
@@ -287,8 +288,20 @@ class MainActivity : AppCompatActivity() {
         fx.show(FxBackground.IDLE)
         cardContainer.visibility = View.GONE
         coverTitle.visibility = View.GONE
-        // the allocated phone number, so the crew can tell the handsets apart
-        idleLabel.text = getString(R.string.phone_label, phoneId)
+        // the handset number, with whoever is on it beside it, so the crew can
+        // tell the phones apart at a glance
+        val player = Tables.player(this, MessageStore.getActiveTable(this), phoneId)
+        idleLabel.text = if (player == null) {
+            getString(R.string.phone_label, phoneId)
+        } else {
+            val label = "$phoneId  ${player.name}"
+            SpannableString(label).apply {
+                setSpan(
+                    RelativeSizeSpan(0.8f), label.indexOf(player.name), label.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+        }
         idleLabel.visibility = View.VISIBLE
     }
 

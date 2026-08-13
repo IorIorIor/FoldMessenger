@@ -22,4 +22,5 @@
     <string name="selfie_sent">Gelukt, bedankt!</string>
     <string name="selfie_failed">Versturen mislukt — probeer opnieuw</string>
     <string name="no_camera">Geen camera-app gevonden</string>
+    <string name="pick_phone_again">Kies opnieuw een telefoonnummer</string>
 </resources>

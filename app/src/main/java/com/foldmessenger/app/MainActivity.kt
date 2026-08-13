@@ -169,6 +169,15 @@ class MainActivity : AppCompatActivity() {
         selfiePhoto = findViewById(R.id.selfie_photo)
         selfieButton = findViewById(R.id.btn_selfie)
         selfieButton.setOnClickListener { takeSelfie() }
+        // Long-press the number in the corner to hand a handset to someone else.
+        // Deliberately awkward: it must not be reachable by accident mid-round,
+        // but the crew needs it without reinstalling.
+        idleLabel.setOnLongClickListener {
+            MessageStore.setPhoneId(this, 0)
+            Toast.makeText(this, R.string.pick_phone_again, Toast.LENGTH_SHORT).show()
+            render()
+            true
+        }
         setupTitle = findViewById(R.id.setup_title)
 
         applyCardCorners()

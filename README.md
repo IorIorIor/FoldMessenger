@@ -106,7 +106,7 @@ needs a static bitmap.
 ## Installing on each phone
 
 1. Copy `FoldMessenger.apk` to the phone and open it (allow "install unknown apps" when prompted).
-2. Open the app, tap the phone's number (1–8).
+2. Open the app, tap the phone's number (1–6).
 3. Allow **notifications** when asked.
 4. Allow **"Appear on top"** when the settings page opens (lets the app pop the image
    onto the cover screen the moment a message arrives).
@@ -122,6 +122,10 @@ needs a static bitmap.
    screen" Labs toggle only exists on the Z Flip.)
 
 A small persistent notification ("Listening as phone N") means the phone is connected.
+
+**Changing a handset's number later:** long-press the number in the bottom-left of
+the idle screen and the picker comes back. It is a long-press on purpose — it must
+not be reachable by accident mid-round.
 
 ## Sending
 

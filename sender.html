@@ -185,6 +185,9 @@ for (let t = 1; t <= TABLE_COUNT; t++) {
 }
 
 function paintTables() {
+  if (typeof renderResults === "function" && !document.getElementById("resultsBox").hidden) {
+    setTimeout(renderResults, 0);
+  }
   document.querySelectorAll("#tables button").forEach(b => {
     b.classList.toggle("active", Number(b.dataset.table) === activeTable);
   });
@@ -196,6 +199,7 @@ async function selectTable(t) {
   localStorage.setItem("fm_table", String(t));
   paintTables();
   paintPhones();
+startResults();
   try {
     const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: `__TABLE__${t}`, headers: authHeaders() });
     addLog(res.ok ? `✓ Tafel ${t} actief` : `✗ Tafel ${t} — HTTP ${res.status}`, res.ok ? "ok" : "err");
@@ -385,6 +389,7 @@ document.getElementById("finalq").addEventListener("click", async () => {
     const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__FINALQUESTION__", headers: authHeaders() });
     if (res.ok) {
       addLog(`✓ Final question sent ${new Date().toLocaleTimeString()}`, "ok");
+      startVoteRound();
       startResults();
     } else {
       addLog(`✗ Final question — HTTP ${res.status}`, "err");
@@ -394,45 +399,94 @@ document.getElementById("finalq").addEventListener("click", async () => {
   }
 });
 
-// Phones publish their picks to the votes topic; subscribe and render them live.
-let resultsStream = null;
+// Phones publish their picks to the votes topic. This polls rather than using
+// an EventSource: a stream only delivers what is published while it happens to
+// be connected, so a vote cast before the page was opened - or anything sent
+// during a reload or a dropped connection - was silently lost. Polling with
+// `since` can't miss one.
 const answers = new Map();
+let votesPolling = false;
 
 function startResults() {
   document.getElementById("resultsBox").hidden = false;
   renderResults();
-  if (resultsStream) return;
-  resultsStream = new EventSource(`${SERVER}/${TOPIC_BASE}-votes/sse${authQuery()}`);
-  resultsStream.onmessage = (e) => {
-    let payload;
-    try { payload = JSON.parse(JSON.parse(e.data).message); } catch (_) { return; }
-    if (!payload || typeof payload.phone !== "number") return;
-    answers.set(payload.phone, payload);
-    renderResults();
-  };
-  resultsStream.onerror = () => addLog("⚠ Lost the results connection — retrying…", "err");
+  if (votesPolling) return;
+  votesPolling = true;
+  pollVotes();
+  setInterval(pollVotes, VOTE_POLL_MS);
+}
+
+const VOTE_POLL_MS = 5000;
+const VOTE_LOOKBACK = "6h";
+
+// Answers belong to the round that is running. Asking the question (or starting
+// a new round) moves this marker, so the previous sitting's picks can't reappear
+// out of the topic history — including after a reload.
+let votesSince = Number(localStorage.getItem("fm_votes_since") || 0);
+
+function startVoteRound() {
+  votesSince = Math.floor(Date.now() / 1000);
+  localStorage.setItem("fm_votes_since", String(votesSince));
+  answers.clear();
+  renderResults();
+}
+
+async function pollVotes() {
+  try {
+    const since = votesSince || VOTE_LOOKBACK;
+    const res = await fetch(
+      `${SERVER}/${TOPIC_BASE}-votes/json?poll=1&since=${since}`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) return;
+    const text = await res.text();
+    let changed = false;
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      let m;
+      try { m = JSON.parse(line); } catch (_) { continue; }
+      if (m.event !== "message" || !m.message) continue;
+      let payload;
+      try { payload = JSON.parse(m.message); } catch (_) { continue; }
+      if (typeof payload.phone !== "number") continue;
+      if (payload.phone < 1 || payload.phone > PHONE_COUNT) continue;   // stray/test data
+      if (votesSince && (m.time || 0) < votesSince) continue;
+      // one answer per phone, the most recent wins
+      const prev = answers.get(payload.phone);
+      if (!prev || (m.time || 0) >= (prev._t || 0)) {
+        payload._t = m.time || 0;
+        answers.set(payload.phone, payload);
+        changed = true;
+      }
+    }
+    if (changed) renderResults();
+  } catch (e) {
+    // transient; the next tick tries again
+  }
 }
 
 function renderResults() {
   const el = document.getElementById("results");
   el.innerHTML = "";
-  const seen = [...answers.keys()].sort((a, b) => a - b);
-  for (const phone of seen) {
-    const a = answers.get(phone);
+  // only the table in play — mixing sittings would be unreadable
+  const forTable = [...answers.values()]
+    .filter(a => !a.table || a.table === activeTable)
+    .sort((a, b) => a.phone - b.phone);
+  for (const a of forTable) {
     const names = (a.pickNames || []).join(", ");
     const row = document.createElement("div");
     row.className = "row";
-    row.innerHTML = `<span class="who">Phone ${phone}${a.personName ? " (" + a.personName + ")" : ""}</span>` +
-      (names ? `<span class="picks">${names}</span>` : `<span class="none">niemand gekozen</span>`);
+    row.innerHTML = `<span class="who">${a.phone}${a.personName ? " " + a.personName : ""}</span>` +
+      (names ? `<span class="picks">→ ${names}</span>` : `<span class="none">niemand gekozen</span>`);
     el.appendChild(row);
   }
-  const missing = PHONE_COUNT - seen.length;
-  if (missing > 0) {
-    const row = document.createElement("div");
-    row.className = "row waiting";
-    row.textContent = `wachten op ${missing} van de ${PHONE_COUNT} telefoons…`;
-    el.appendChild(row);
-  }
+  const missing = PHONE_COUNT - forTable.length;
+  const row = document.createElement("div");
+  row.className = "row waiting";
+  row.textContent = missing > 0
+    ? `wachten op ${missing} van de ${PHONE_COUNT} telefoons…`
+    : `alle ${PHONE_COUNT} telefoons hebben gekozen`;
+  el.appendChild(row);
 }
 
 // Admin: wipe the current message on every phone; they all return to the idle image.
@@ -443,8 +497,7 @@ document.getElementById("nextround").addEventListener("click", async () => {
     const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__NEXTROUND__", headers: authHeaders() });
     if (res.ok) {
       addLog(`✓ Next round — all phones cleared ${new Date().toLocaleTimeString()}`, "ok");
-      answers.clear();
-      renderResults();
+      startVoteRound();
     }
     else addLog(`✗ Next round — HTTP ${res.status}`, "err");
   } catch (e) {

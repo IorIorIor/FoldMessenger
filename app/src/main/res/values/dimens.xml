@@ -20,10 +20,12 @@
     <dimen name="vote_check_size">22dp</dimen>
     <dimen name="vote_name_size">12sp</dimen>
     <dimen name="vote_cell_margin">6dp</dimen>
-    <dimen name="done_button_size">16sp</dimen>
-    <dimen name="done_button_padding_h">28dp</dimen>
-    <dimen name="done_button_padding_v">12dp</dimen>
+    <dimen name="done_button_size">14sp</dimen>
+    <dimen name="done_button_padding_h">24dp</dimen>
+    <dimen name="done_button_padding_v">10dp</dimen>
     <dimen name="final_padding_v">16dp</dimen>
     <dimen name="chosen_avatar_size">150dp</dimen>
     <dimen name="chosen_name_size">34sp</dimen>
+    <dimen name="final_gap">20dp</dimen>
+    <dimen name="selfie_photo_size">140dp</dimen>
 </resources>

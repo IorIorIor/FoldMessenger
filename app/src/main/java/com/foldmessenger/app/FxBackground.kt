@@ -91,6 +91,7 @@ class FxBackground(private val webView: WebView) {
         const val TEXT_MESSAGE = "TEXT MESSAGE"
         const val MEDIA_MESSAGE = "MEDIA MESSAGE"
         const val NEW_REVEAL = "NEW REVEAL"
+        const val SECOND_DATE = "2ND DATE SELECTED"
 
         private const val TAG = "FxBackground"
         /** Version-stamped so an app update can never reuse the cached page. */

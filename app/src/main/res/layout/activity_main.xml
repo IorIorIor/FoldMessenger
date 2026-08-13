@@ -76,94 +76,94 @@
             
         </LinearLayout>
 
-        <!-- Closing question: pick the daters you'd like to know better.
-             The faces scroll if they don't fit, so KLAAR is always reachable. -->
-        <LinearLayout
+        <!-- Closing question. A ScrollView with fillViewport so the block sits
+             centred when it fits and scrolls when it doesn't; the three parts
+             are separated by one shared gap, so the spacing reads as even. -->
+        <ScrollView
             android:id="@+id/final_group"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:gravity="center_horizontal"
-            android:orientation="vertical"
+            android:fillViewport="true"
             android:paddingHorizontal="@dimen/card_padding"
-            android:paddingTop="@dimen/final_padding_v"
-            android:paddingBottom="@dimen/final_padding_v"
+            android:scrollbars="none"
             android:visibility="gone">
 
-            <TextView
-                android:id="@+id/final_question"
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:breakStrategy="simple"
-                android:fontFamily="@font/samsung_sharp_sans_bold"
+                android:layout_height="match_parent"
                 android:gravity="center"
-                android:hyphenationFrequency="none"
-                android:textColor="@android:color/white"
-                android:textSize="@dimen/final_question_size" />
+                android:orientation="vertical"
+                android:paddingVertical="@dimen/final_padding_v">
 
-            <ScrollView
-                android:id="@+id/vote_scroll"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:fillViewport="true"
-                android:scrollbars="none">
+                <TextView
+                    android:id="@+id/final_question"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:breakStrategy="simple"
+                    android:fontFamily="@font/samsung_sharp_sans_bold"
+                    android:gravity="center"
+                    android:hyphenationFrequency="none"
+                    android:textColor="@android:color/white"
+                    android:textSize="@dimen/final_question_size" />
 
                 <GridLayout
                     android:id="@+id/vote_grid"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="center"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="@dimen/final_gap"
                     android:columnCount="3" />
-            </ScrollView>
 
-            <Button
-                android:id="@+id/btn_done"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/btn_done"
-                android:fontFamily="@font/samsung_sharp_sans_bold"
-                android:paddingHorizontal="@dimen/done_button_padding_h"
-                android:paddingVertical="@dimen/done_button_padding_v"
-                android:text="@string/done_button"
-                android:textColor="#111111"
-                android:textSize="@dimen/done_button_size" />
-
-            <!-- after KLAAR: the one they picked, held on screen for the reveal -->
-            <LinearLayout
-                android:id="@+id/chosen_group"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <ImageView
-                    android:id="@+id/chosen_avatar"
-                    android:layout_width="@dimen/chosen_avatar_size"
-                    android:layout_height="@dimen/chosen_avatar_size"
-                    android:importantForAccessibility="no" />
-
-                <TextView
-                    android:id="@+id/chosen_name"
+                <Button
+                    android:id="@+id/btn_done"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/card_padding"
-                    android:fontFamily="@font/apris_black"
-                    android:textColor="@android:color/white"
-                    android:textSize="@dimen/chosen_name_size" />
-            </LinearLayout>
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="@dimen/final_gap"
+                    android:background="@drawable/btn_done"
+                    android:fontFamily="@font/samsung_sharp_sans_bold"
+                    android:paddingHorizontal="@dimen/done_button_padding_h"
+                    android:paddingVertical="@dimen/done_button_padding_v"
+                    android:text="@string/done_button"
+                    android:textColor="#111111"
+                    android:textSize="@dimen/done_button_size" />
 
-            <TextView
-                android:id="@+id/final_thanks"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:fontFamily="@font/samsung_sharp_sans_bold"
-                android:gravity="center"
-                android:textColor="@android:color/white"
-                android:textSize="@dimen/final_question_size"
-                android:visibility="gone" />
-        </LinearLayout>
+                <!-- after KLAAR: the one they picked, held large for the reveal -->
+                <LinearLayout
+                    android:id="@+id/chosen_group"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:id="@+id/chosen_avatar"
+                        android:layout_width="@dimen/chosen_avatar_size"
+                        android:layout_height="@dimen/chosen_avatar_size"
+                        android:importantForAccessibility="no" />
+
+                    <TextView
+                        android:id="@+id/chosen_name"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/final_gap"
+                        android:fontFamily="@font/apris_black"
+                        android:textColor="@android:color/white"
+                        android:textSize="@dimen/chosen_name_size" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/final_thanks"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/samsung_sharp_sans_bold"
+                    android:gravity="center"
+                    android:textColor="@android:color/white"
+                    android:textSize="@dimen/final_question_size"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </ScrollView>
 
         <!-- Selfie round: the phone's own camera app takes the picture -->
         <LinearLayout
@@ -175,39 +175,71 @@
             android:padding="@dimen/card_padding"
             android:visibility="gone">
 
-            <TextView
-                android:id="@+id/selfie_title"
+            <LinearLayout
+                android:id="@+id/selfie_ask"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="@font/samsung_sharp_sans_bold"
                 android:gravity="center"
-                android:text="@string/selfie_prompt"
-                android:textColor="@android:color/white"
-                android:textSize="@dimen/final_question_size" />
+                android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/selfie_hint"
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/samsung_sharp_sans_bold"
+                    android:gravity="center"
+                    android:text="@string/selfie_prompt"
+                    android:textColor="@android:color/white"
+                    android:textSize="@dimen/final_question_size" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:fontFamily="@font/samsung_sharp_sans_bold"
+                    android:gravity="center"
+                    android:text="@string/selfie_hint"
+                    android:textColor="#B0FFFFFF"
+                    android:textSize="@dimen/vote_name_size" />
+
+                <Button
+                    android:id="@+id/btn_selfie"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/final_gap"
+                    android:background="@drawable/btn_done"
+                    android:fontFamily="@font/samsung_sharp_sans_bold"
+                    android:paddingHorizontal="@dimen/done_button_padding_h"
+                    android:paddingVertical="@dimen/done_button_padding_v"
+                    android:text="@string/selfie_button"
+                    android:textColor="#111111"
+                    android:textSize="@dimen/done_button_size" />
+            </LinearLayout>
+
+            <!-- their own shot, then straight back to idle -->
+            <LinearLayout
+                android:id="@+id/selfie_done"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:fontFamily="@font/samsung_sharp_sans_bold"
                 android:gravity="center"
-                android:text="@string/selfie_hint"
-                android:textColor="#B0FFFFFF"
-                android:textSize="@dimen/vote_name_size" />
+                android:orientation="vertical"
+                android:visibility="gone">
 
-            <Button
-                android:id="@+id/btn_selfie"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/card_padding"
-                android:background="@drawable/btn_done"
-                android:fontFamily="@font/samsung_sharp_sans_bold"
-                android:paddingHorizontal="@dimen/done_button_padding_h"
-                android:paddingVertical="@dimen/done_button_padding_v"
-                android:text="@string/selfie_button"
-                android:textColor="#111111"
-                android:textSize="@dimen/done_button_size" />
+                <ImageView
+                    android:id="@+id/selfie_photo"
+                    android:layout_width="@dimen/selfie_photo_size"
+                    android:layout_height="@dimen/selfie_photo_size"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/final_gap"
+                    android:fontFamily="@font/samsung_sharp_sans_bold"
+                    android:gravity="center"
+                    android:text="@string/selfie_sent"
+                    android:textColor="@android:color/white"
+                    android:textSize="@dimen/final_question_size" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- "New Secret!" teaser on the cover screen -->

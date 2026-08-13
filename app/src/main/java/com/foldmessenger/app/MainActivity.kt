@@ -78,14 +78,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var finalGroup: View
     private lateinit var finalQuestionText: TextView
     private lateinit var voteGrid: GridLayout
-    private lateinit var voteScroll: View
     private lateinit var doneButton: Button
     private lateinit var finalThanks: TextView
     private lateinit var chosenGroup: View
     private lateinit var chosenAvatar: ImageView
     private lateinit var chosenName: TextView
     private lateinit var selfieGroup: View
-    private lateinit var selfieTitle: TextView
+    private lateinit var selfieAsk: View
+    private lateinit var selfieDone: View
+    private lateinit var selfiePhoto: ImageView
     private lateinit var selfieButton: Button
     private lateinit var setupTitle: TextView
 
@@ -100,6 +101,9 @@ class MainActivity : AppCompatActivity() {
     /** The one dater picked in the closing question; null until they choose. */
     private var pickedSeat: Int? = null
     private var selfieFile: File? = null
+
+    /** True once this phone's selfie is away, so the prompt can't come back. */
+    private var selfieTaken = false
 
     private val cameraLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -154,14 +158,15 @@ class MainActivity : AppCompatActivity() {
         finalGroup = findViewById(R.id.final_group)
         finalQuestionText = findViewById(R.id.final_question)
         voteGrid = findViewById(R.id.vote_grid)
-        voteScroll = findViewById(R.id.vote_scroll)
         doneButton = findViewById(R.id.btn_done)
         finalThanks = findViewById(R.id.final_thanks)
         chosenGroup = findViewById(R.id.chosen_group)
         chosenAvatar = findViewById(R.id.chosen_avatar)
         chosenName = findViewById(R.id.chosen_name)
         selfieGroup = findViewById(R.id.selfie_group)
-        selfieTitle = findViewById(R.id.selfie_title)
+        selfieAsk = findViewById(R.id.selfie_ask)
+        selfieDone = findViewById(R.id.selfie_done)
+        selfiePhoto = findViewById(R.id.selfie_photo)
         selfieButton = findViewById(R.id.btn_selfie)
         selfieButton.setOnClickListener { takeSelfie() }
         setupTitle = findViewById(R.id.setup_title)
@@ -260,6 +265,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         selfieGroup.visibility = View.GONE
+        selfieTaken = false
 
         if (MessageStore.isFinalQuestion(this)) {
             showFinalQuestion(isCover)
@@ -593,14 +599,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSelfiePrompt() {
         stopTypingTitle()
-        fx.show(FxBackground.TEXT_MESSAGE)
         cardContainer.visibility = View.GONE
         finalGroup.visibility = View.GONE
         coverTitle.visibility = View.GONE
         idleLabel.visibility = View.GONE
-        selfieTitle.setText(R.string.selfie_prompt)
-        selfieButton.isEnabled = true
         selfieGroup.visibility = View.VISIBLE
+
+        if (selfieTaken) {
+            // Their own shot and a thank-you, nothing else. Re-rendering must not
+            // drop back to the prompt — the phone caches its own selfie coming
+            // back around the topic, which used to trigger exactly that.
+            fx.show(FxBackground.NEW_REVEAL)
+            selfieAsk.visibility = View.GONE
+            selfieDone.visibility = View.VISIBLE
+        } else {
+            fx.show(FxBackground.TEXT_MESSAGE)
+            selfieDone.visibility = View.GONE
+            selfieAsk.visibility = View.VISIBLE
+            selfieButton.isEnabled = true
+        }
     }
 
     /**
@@ -633,7 +650,17 @@ class MainActivity : AppCompatActivity() {
         SelfieSender.publish(this, photo) { ok ->
             runOnUiThread {
                 if (ok) {
-                    selfieTitle.setText(R.string.selfie_sent)
+                    selfieTaken = true
+                    BitmapFactory.decodeFile(photo.absolutePath)?.let {
+                        selfiePhoto.setImageDrawable(circularBitmap(it))
+                    }
+                    showSelfiePrompt()
+                    selfieDone.alpha = 0f
+                    selfieDone.animate()
+                        .alpha(1f)
+                        .setDuration(REVEAL_FADE_MS)
+                        .setInterpolator(DecelerateInterpolator())
+                        .start()
                     selfieGroup.postDelayed({ MessageStore.setSelfieMode(this, false) }, THANKS_MS)
                 } else {
                     selfieButton.isEnabled = true
@@ -673,7 +700,7 @@ class MainActivity : AppCompatActivity() {
             showingFinal = true
             pickedSeat = null
             chosenGroup.visibility = View.GONE
-            voteScroll.visibility = View.VISIBLE
+            voteGrid.visibility = View.VISIBLE
             buildVoteGrid()
             finalQuestionText.setText(R.string.final_question)
             finalQuestionText.visibility = View.VISIBLE
@@ -760,8 +787,9 @@ class MainActivity : AppCompatActivity() {
     private fun showChosen(seat: Int) {
         val table = MessageStore.getActiveTable(this)
         val person = Tables.player(this, table, seat) ?: return
+        fx.show(FxBackground.SECOND_DATE)
         finalQuestionText.visibility = View.GONE
-        voteScroll.visibility = View.GONE
+        voteGrid.visibility = View.GONE
         doneButton.visibility = View.GONE
         finalThanks.visibility = View.GONE
         chosenName.text = person.name

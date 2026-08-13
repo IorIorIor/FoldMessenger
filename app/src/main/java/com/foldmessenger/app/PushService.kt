@@ -67,6 +67,10 @@ class PushService : Service() {
         /** Admin control message "__TABLE__2": switch every phone to that table. */
         private val TABLE_COMMAND = Regex("^__TABLE__(\\d+)$")
 
+        /** Reconnect delay bounds; see scheduleReconnect. */
+        private const val MIN_RECONNECT_MS = 1_000L
+        private const val MAX_RECONNECT_MS = 5_000L
+
         /** Time given to the direct launch before falling back to a notification. */
         private const val VIEWER_LAUNCH_GRACE_MS = 700L
 
@@ -82,13 +86,14 @@ class PushService : Service() {
     private val executor = Executors.newSingleThreadExecutor()
     private var webSocket: WebSocket? = null
     private var connectedPhoneId = 0
-    private var reconnectDelayMs = 5_000L
+    private var reconnectDelayMs = MIN_RECONNECT_MS
+    private var reconnectScheduled = false
     private var destroyed = false
     private var alertPlayer: MediaPlayer? = null
     private var updateCheckScheduled = false
 
     private val client = OkHttpClient.Builder()
-        .pingInterval(30, TimeUnit.SECONDS)
+        .pingInterval(10, TimeUnit.SECONDS)   // spot a dead socket quickly
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
@@ -176,7 +181,8 @@ class PushService : Service() {
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "WebSocket open")
-                reconnectDelayMs = 5_000L
+                reconnectDelayMs = MIN_RECONNECT_MS
+                reconnectScheduled = false
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -195,12 +201,24 @@ class PushService : Service() {
         })
     }
 
+    /**
+     * These sockets drop regularly, and anything published while one is down
+     * only lands on reconnect — so the backoff is what a phone's lateness
+     * actually costs. It is kept to a few seconds rather than the usual
+     * doubling into minutes: there are six phones on a local network, so
+     * reconnecting eagerly costs nothing and a minute of silence would ruin
+     * the timing of a reveal.
+     */
     private fun scheduleReconnect() {
-        if (destroyed) return
+        if (destroyed || reconnectScheduled) return
+        reconnectScheduled = true
         webSocket = null
         val delay = reconnectDelayMs
-        reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(60_000L)
-        handler.postDelayed({ connectIfNeeded() }, delay)
+        reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(MAX_RECONNECT_MS)
+        handler.postDelayed({
+            reconnectScheduled = false
+            connectIfNeeded()
+        }, delay)
     }
 
     private fun handleEvent(json: String) {
@@ -311,6 +329,10 @@ class PushService : Service() {
 
         val personId = 0 // secrets carry their own artwork; nobody is named
 
+        val lagMs = if (publishedAt > 0) System.currentTimeMillis() - publishedAt * 1000 else -1
+        Log.i(TAG, "Secret shown ${lagMs}ms after it was sent" +
+            (if (mediaPath != null) " (media included)" else ""))
+
         MessageStore.saveMessage(this, displayText, mediaPath, mime, personId)
         // Only skip the notification when the viewer is demonstrably already on
         // screen; otherwise post it, because its full-screen intent is the only
@@ -378,6 +400,7 @@ class PushService : Service() {
     }
 
     private fun downloadAttachment(url: String): String? {
+        val startedAt = System.currentTimeMillis()
         return try {
             val request = Request.Builder().url(url).withAuth().build()
             client.newCall(request).execute().use { response ->
@@ -389,6 +412,8 @@ class PushService : Service() {
                 file.outputStream().use { out ->
                     response.body?.byteStream()?.copyTo(out)
                 }
+                Log.i(TAG, "Downloaded ${file.length() / 1024}KB in " +
+                    "${System.currentTimeMillis() - startedAt}ms")
                 file.absolutePath
             }
         } catch (e: Exception) {

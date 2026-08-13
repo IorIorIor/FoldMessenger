@@ -660,9 +660,16 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (ok) {
                     selfieTaken = true
-                    BitmapFactory.decodeFile(photo.absolutePath)?.let {
-                        selfiePhoto.setImageDrawable(circularBitmap(it))
-                    }
+                    // Show the copy SelfieSender just filed, not the raw camera
+                    // file: that one is the downscaled, EXIF-rotated image the
+                    // other phones will see, so the preview can't disagree with
+                    // it or come out on its side.
+                    val mine = Faces.get(
+                        this, MessageStore.getActiveTable(this), MessageStore.getPhoneId(this)
+                    )
+                    val preview = mine?.let { BitmapFactory.decodeFile(it.absolutePath) }
+                        ?: BitmapFactory.decodeFile(photo.absolutePath)
+                    preview?.let { selfiePhoto.setImageDrawable(circularBitmap(it)) }
                     showSelfiePrompt()
                     selfieDone.alpha = 0f
                     selfieDone.animate()
@@ -803,6 +810,7 @@ class MainActivity : AppCompatActivity() {
         finalThanks.visibility = View.GONE
         chosenName.text = person.name
         chosenAvatar.setImageDrawable(faceOf(person))
+        sizeChosenAvatar()
         chosenGroup.visibility = View.VISIBLE
         chosenGroup.alpha = 0f
         chosenGroup.animate()
@@ -862,6 +870,25 @@ class MainActivity : AppCompatActivity() {
     /** Fit the video inside the card bounds, preserving its aspect ratio. */
     private fun sizeVideo(videoWidth: Int, videoHeight: Int) {
         sizeMediaBlock(videoWidth, videoHeight)
+    }
+
+    /**
+     * The reveal is the moment of the night, so the face is drawn as large as
+     * the screen allows rather than at a fixed size — the biggest circle that
+     * still leaves room for the name underneath.
+     */
+    private fun sizeChosenAvatar() {
+        val pad = resources.getDimensionPixelSize(R.dimen.final_padding_v)
+        val gap = resources.getDimensionPixelSize(R.dimen.final_gap)
+        val nameHeight = resources.getDimensionPixelSize(R.dimen.chosen_name_size) * 2
+        val availableWidth = resources.displayMetrics.widthPixels - 2 * pad
+        val availableHeight = resources.displayMetrics.heightPixels - 2 * pad - gap - nameHeight
+        val side = minOf(availableWidth, availableHeight)
+            .coerceAtLeast(resources.getDimensionPixelSize(R.dimen.chosen_avatar_size))
+        chosenAvatar.layoutParams = chosenAvatar.layoutParams.apply {
+            width = side
+            height = side
+        }
     }
 
     private fun stopVideo() {

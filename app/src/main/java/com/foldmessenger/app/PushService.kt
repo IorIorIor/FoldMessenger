@@ -15,11 +15,14 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.wifi.WifiManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -67,6 +70,9 @@ class PushService : Service() {
         /** Admin control message "__TABLE__2": switch every phone to that table. */
         private val TABLE_COMMAND = Regex("^__TABLE__(\\d+)$")
 
+        /** How often the watchdog checks that the socket is still there. */
+        private const val WATCHDOG_MS = 15_000L
+
         /** Reconnect delay bounds; see scheduleReconnect. */
         private const val MIN_RECONNECT_MS = 1_000L
         private const val MAX_RECONNECT_MS = 5_000L
@@ -83,7 +89,24 @@ class PushService : Service() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Reconnects and watchdogs run here rather than on the main thread. The
+     * shader animates continuously on main, so a timer posted there fires late
+     * by however long the main thread is busy — which is exactly when a phone
+     * can least afford to be slow reconnecting.
+     */
+    private val netThread = HandlerThread("fm-net").apply { start() }
+    private val netHandler = Handler(netThread.looper)
+
+    /** Incoming secrets, one at a time so the newest is the one left showing. */
     private val executor = Executors.newSingleThreadExecutor()
+
+    /** Update checks, kept away from the secrets so they can never delay one. */
+    private val updateExecutor = Executors.newSingleThreadExecutor()
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private var webSocket: WebSocket? = null
     private var connectedPhoneId = 0
     private var reconnectDelayMs = MIN_RECONNECT_MS
@@ -91,6 +114,10 @@ class PushService : Service() {
     private var destroyed = false
     private var alertPlayer: MediaPlayer? = null
     private var updateCheckScheduled = false
+    private var watchdogRunning = false
+
+    /** Built once: decoding and drawing it per message cost time on every secret. */
+    private var cachedTeaser: Bitmap? = null
 
     private val client = OkHttpClient.Builder()
         .pingInterval(10, TimeUnit.SECONDS)   // spot a dead socket quickly
@@ -102,6 +129,28 @@ class PushService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannels()
+        acquireLocks()
+    }
+
+    /**
+     * Wi-Fi power save parks the radio between beacons, so an incoming secret
+     * can sit unnoticed for tens of seconds — the phones that look "a minute
+     * behind". A high-performance Wi-Fi lock and a partial wake lock keep the
+     * radio and CPU available for as long as the service runs.
+     */
+    private fun acquireLocks() {
+        try {
+            val power = getSystemService(PowerManager::class.java)
+            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FoldMessenger:push")
+                .apply { setReferenceCounted(false); acquire() }
+            val wifi = applicationContext.getSystemService(WifiManager::class.java)
+            wifiLock = wifi?.createWifiLock(
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF, "FoldMessenger:push"
+            )?.apply { setReferenceCounted(false); acquire() }
+            Log.i(TAG, "Locks held: wake=${wakeLock?.isHeld}, wifi=${wifiLock?.isHeld}")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not hold locks: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -116,7 +165,27 @@ class PushService : Service() {
         }
         connectIfNeeded()
         scheduleUpdateChecks()
+        startWatchdog()
         return START_STICKY
+    }
+
+    /**
+     * Last line of defence: if the socket is somehow down and nothing has been
+     * scheduled to bring it back, reconnect. Costs nothing when all is well.
+     */
+    private fun startWatchdog() {
+        if (watchdogRunning) return
+        watchdogRunning = true
+        lateinit var tick: Runnable
+        tick = Runnable {
+            if (destroyed) return@Runnable
+            if (webSocket == null && !reconnectScheduled) {
+                Log.w(TAG, "Watchdog: socket down with no reconnect pending")
+                connectIfNeeded()
+            }
+            netHandler.postDelayed(tick, WATCHDOG_MS)
+        }
+        netHandler.postDelayed(tick, WATCHDOG_MS)
     }
 
     /** Poll GitHub Releases for a newer build: once on start, then every 15 min. */
@@ -127,10 +196,10 @@ class PushService : Service() {
         lateinit var tick: Runnable
         tick = Runnable {
             if (destroyed) return@Runnable
-            executor.execute { checkForUpdate() }
-            handler.postDelayed(tick, interval)
+            updateExecutor.execute { checkForUpdate() }
+            netHandler.postDelayed(tick, interval)
         }
-        handler.postDelayed(tick, 10_000)
+        netHandler.postDelayed(tick, 10_000)
     }
 
     private fun checkForUpdate() {
@@ -151,6 +220,14 @@ class PushService : Service() {
         destroyed = true
         webSocket?.cancel()
         executor.shutdown()
+        updateExecutor.shutdown()
+        netThread.quitSafely()
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+            if (wifiLock?.isHeld == true) wifiLock?.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not release locks: ${e.message}")
+        }
         alertPlayer?.release()
         alertPlayer = null
         super.onDestroy()
@@ -215,7 +292,7 @@ class PushService : Service() {
         webSocket = null
         val delay = reconnectDelayMs
         reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(MAX_RECONNECT_MS)
-        handler.postDelayed({
+        netHandler.postDelayed({
             reconnectScheduled = false
             connectIfNeeded()
         }, delay)
@@ -464,6 +541,11 @@ class PushService : Service() {
 
     /** Cover background with "New Secret!" drawn in the Samsung Sharp Sans font. */
     private fun teaserBitmap(): Bitmap? {
+        cachedTeaser?.let { return it }
+        return buildTeaserBitmap()?.also { cachedTeaser = it }
+    }
+
+    private fun buildTeaserBitmap(): Bitmap? {
         return try {
             val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
             val src = BitmapFactory.decodeResource(resources, R.drawable.bg_cover, opts)

@@ -37,7 +37,7 @@ object VoteSender {
         executor.execute {
             val ok = try {
                 val request = Request.Builder()
-                    .url("${Config.NTFY_SERVER}/${Config.votesTopic()}")
+                    .url("${Servers.current(ctx)}/${Config.votesTopic()}")
                     .post(body.toRequestBody())
                     .withAuth()
                     .build()

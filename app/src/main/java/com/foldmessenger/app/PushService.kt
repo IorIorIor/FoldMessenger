@@ -70,6 +70,9 @@ class PushService : Service() {
         /** Admin control message "__TABLE__2": switch every phone to that table. */
         private val TABLE_COMMAND = Regex("^__TABLE__(\\d+)$")
 
+        /** Admin control message "__SERVER__http://10.0.0.5:8080", or "__SERVER__off". */
+        private val SERVER_COMMAND = Regex("^__SERVER__(.+)$")
+
         /** How often the watchdog checks that the socket is still there. */
         private const val WATCHDOG_MS = 15_000L
 
@@ -243,6 +246,7 @@ class PushService : Service() {
 
     private fun connect(phoneId: Int) {
         connectedPhoneId = phoneId
+        val base = Servers.resolve(this)
         val topics = "${Config.phoneTopic(phoneId)},${Config.allTopic()},${Config.facesTopic()}"
         // Resume from the last event we saw: the socket drops regularly (Wi-Fi
         // hiccups, doze), and without this anything published while it was down
@@ -250,11 +254,13 @@ class PushService : Service() {
         val since = MessageStore.getLastEventTime(this)
         val query = buildList {
             if (since > 0) add("since=$since")
-            Ntfy.authQueryParam()?.let { add(it) }
+            if (Servers.needsAuth(base)) Ntfy.authQueryParam()?.let { add(it) }
         }.joinToString("&")
-        val url = "${Config.NTFY_SERVER}/$topics/ws" + if (query.isNotEmpty()) "?$query" else ""
-        Log.i(TAG, "Connecting to ${Config.NTFY_SERVER}/$topics/ws (since=$since, auth=${Ntfy.hasToken})")
-        val request = Request.Builder().url(url).withAuth().build()
+        val url = "$base/$topics/ws" + if (query.isNotEmpty()) "?$query" else ""
+        Log.i(TAG, "Connecting to $base/$topics/ws (since=$since)")
+        val request = Request.Builder().url(url).let {
+            if (Servers.needsAuth(base)) it.withAuth() else it
+        }.build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "WebSocket open")
@@ -349,6 +355,20 @@ class PushService : Service() {
                 if (MainActivity.isOnScreen) playAlert() else postMessageNotification()
             }, VIEWER_LAUNCH_GRACE_MS)
             return
+        }
+
+        SERVER_COMMAND.find(text)?.let { match ->
+            if (attachment == null) {
+                val value = match.groupValues[1].trim()
+                val base = if (value.equals("off", true)) null else value.trimEnd('/')
+                MessageStore.setLocalServer(this, base)
+                Log.i(TAG, "Server set to ${base ?: "ntfy only"}; reconnecting")
+                // come back on the new address straight away
+                webSocket?.cancel()
+                webSocket = null
+                netHandler.post { connectIfNeeded() }
+                return
+            }
         }
 
         TABLE_COMMAND.find(text)?.let { match ->

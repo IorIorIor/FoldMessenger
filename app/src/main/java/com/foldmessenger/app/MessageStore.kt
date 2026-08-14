@@ -23,6 +23,8 @@ object MessageStore {
     private const val KEY_TABLE = "active_table"
     private const val KEY_FINAL_Q = "final_question"
     private const val KEY_SELFIE = "selfie_mode"
+    private const val KEY_LOCAL_SERVER = "local_server"
+    private const val KEY_ACTIVE_SERVER = "active_server"
 
     @Volatile
     var onMessageChanged: (() -> Unit)? = null
@@ -69,6 +71,20 @@ object MessageStore {
     fun setActiveTable(ctx: Context, table: Int) {
         prefs(ctx).edit().putInt(KEY_TABLE, table).apply()
         Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
+    }
+
+    /** Address of the laptop, learned from an admin broadcast; null until then. */
+    fun getLocalServer(ctx: Context): String? = prefs(ctx).getString(KEY_LOCAL_SERVER, null)
+
+    fun setLocalServer(ctx: Context, base: String?) {
+        prefs(ctx).edit().putString(KEY_LOCAL_SERVER, base).apply()
+    }
+
+    /** Whichever server the last connection actually used. */
+    fun getActiveServer(ctx: Context): String? = prefs(ctx).getString(KEY_ACTIVE_SERVER, null)
+
+    fun setActiveServer(ctx: Context, base: String) {
+        prefs(ctx).edit().putString(KEY_ACTIVE_SERVER, base).apply()
     }
 
     /** True while this phone has been asked for a selfie. */

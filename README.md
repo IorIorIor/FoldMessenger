@@ -19,6 +19,47 @@ sender.html ──HTTPS──> ntfy.sh (push service) ──WebSocket──> Fol
 - The person a secret belongs to travels in ntfy's `title` field as `p<roster position>`;
   the phone looks up the matching avatar and name from its own baked-in roster.
 
+## Running from the laptop (optional, faster)
+
+The phones can talk to a small server on the laptop instead of ntfy.sh. It is
+the same protocol — the server answers the slice of ntfy the app uses — so
+nothing about the app changes except the address it points at.
+
+Why bother: a message crosses the room instead of the internet, attachments come
+off the LAN rather than six phones sharing the venue uplink, and the night no
+longer depends on venue Wi-Fi reaching the outside world or on the ntfy token
+still being valid.
+
+```bash
+cd server && npm install     # once
+npm start
+```
+
+It prints the address to use, e.g. `http://192.168.1.20:8080`. Then:
+
+1. Open that address in a browser — the sender is served from it, so the page
+   already knows where it is.
+2. Press **📡 ZET TELEFOONS OP DEZE LAPTOP**. The phones are told over whichever
+   channel they are on right now, so no handset has to be touched.
+3. **☁︎ Terug naar internet (ntfy)** puts them back.
+
+**The laptop is never the only option.** Every reconnect probes it first and
+falls back to ntfy.sh within a second and a half if it cannot be reached, so
+closing the lid or wandering off the network degrades the show rather than
+ending it. Phones return to the laptop by themselves once it answers again.
+
+If the address is known in advance it can be baked in instead of broadcast:
+
+```bash
+./gradlew assembleRelease -PfmLocalServer=http://192.168.1.20:8080
+```
+
+⚠️ **Check the access point allows client-to-client traffic.** Plenty of venue
+and guest Wi-Fi has client isolation switched on, which blocks the phones from
+seeing the laptop at all — and no amount of app code can work around it. Bring a
+travel router if the venue network is not yours. The laptop also needs a stable
+address (a DHCP reservation) and must not sleep.
+
 ## The ntfy token
 
 Traffic is authenticated with an ntfy access token, which is what lifts the anonymous

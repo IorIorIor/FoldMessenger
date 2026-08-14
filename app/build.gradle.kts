@@ -60,6 +60,12 @@ android {
             ?: rootProject.file("ntfy-token.txt").takeIf { it.exists() }?.readText()?.trim()
             ?: ""
         buildConfigField("String", "NTFY_TOKEN", "\"$ntfyToken\"")
+
+        // Optional laptop address baked in, for a venue where it is known ahead
+        // of time: ./gradlew assembleRelease -PfmLocalServer=http://192.168.1.20:8080
+        // Left empty, phones learn it from the admin's broadcast instead.
+        val localServer = (project.findProperty("fmLocalServer") as String?) ?: ""
+        buildConfigField("String", "LOCAL_SERVER", "\"$localServer\"")
     }
 
     compileOptions {

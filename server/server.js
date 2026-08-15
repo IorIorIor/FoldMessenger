@@ -76,6 +76,10 @@ function publish(topic, { text, title, file, filename }) {
   const message = {
     id: newId(),
     time: nowSeconds(),
+    // ntfy only reports whole seconds, which cannot show whether six phones
+    // revealed 40ms or 900ms apart. This extra field is ignored by the app and
+    // is what the admin's timing table measures the spread with.
+    timeMs: Date.now(),
     event: 'message',
     topic,
     message: text || '',

@@ -21,4 +21,14 @@ object Config {
 
     /** Where phones share the selfies taken at the start of a round. */
     fun facesTopic() = "$TOPIC_BASE-faces"
+
+    /** Where phones report what they did and how long it took, for the admin. */
+    fun acksTopic() = "$TOPIC_BASE-acks"
+
+    /**
+     * Title marking a secret that should be fetched and held, not shown. The
+     * reveal comes later as a separate, tiny broadcast, so the bytes are off
+     * the critical path and six phones can be alerted at the same instant.
+     */
+    const val TITLE_PRELOAD = "preload"
 }

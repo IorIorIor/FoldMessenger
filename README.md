@@ -112,6 +112,46 @@ box adds a caption underneath. A photo or clip is shown at about 60% of the
 screen, floating on the live shader background; add a caption and the card comes
 back behind it so the words have something to sit on.
 
+## Revealing on all six phones at once
+
+Six phones used to chime at six different moments, up to a minute apart. The
+cause was ordering: each phone downloaded the whole picture or clip *before* it
+alerted, so every handset chimed in proportion to its own download speed. Six
+phones pulling a 25 MB file through one access point diverge by exactly that
+much.
+
+Two things fix it, and the first one is automatic.
+
+**Send alerts immediately.** The teaser on the cover screen is baked into the
+app, so the bytes are not needed to tell anyone a secret has arrived — and there
+are seconds of human time between the chime and the phone being unfolded for the
+picture to land in. A phone now alerts in tens of milliseconds regardless of file
+size, and holds on the teaser if it is unfolded before the media is there, rather
+than revealing an empty card and popping the artwork in late. Nothing to operate:
+this is just how **Send** behaves.
+
+**Preload, then reveal.** For a reveal that has to be exact, or for a large clip:
+
+1. Pick the phones, choose the file, press **📥 LAAD SECRET (stil)**. The phones
+   fetch it and say nothing.
+2. The table fills in as each one reports ready. **✨ ONTHUL NU** unlocks at 6/6.
+3. Press it. The reveal carries no attachment — it is a few bytes — so every
+   phone shows the secret on the same beat.
+
+The table also answers "how far apart were they?" from the arrival times the
+laptop stamps, rather than from six handsets that disagree about the clock.
+
+Measured on the emulator, a 25 MB secret: alert at **15 ms**, media at
+**22675 ms**. Under the old ordering the chime was the second number. A
+preloaded reveal lands in **41 ms**.
+
+⚠️ **Commands go to both servers.** A phone listens to the laptop *or* ntfy
+depending on what it could see when it last reconnected, so a fleet can end up
+split. Every command — reveal, next round, final question, selfies, table — is
+published to both, and answers are read from both, because a reveal that reaches
+only half the phones is the worst failure this thing has. Phones also stay on a
+laptop that misses a probe or two rather than defecting on the first miss.
+
 ## Background
 
 The background is the live [UfoldedFX](https://github.com/IorIorIor/UfoldedFX) aura-heart

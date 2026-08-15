@@ -23,7 +23,24 @@ import java.util.concurrent.TimeUnit
 object Servers {
 
     private const val TAG = "Servers"
-    private const val HEALTH_TIMEOUT_MS = 1_500L
+    private const val HEALTH_TIMEOUT_MS = 2_500L
+
+    /**
+     * How many probes in a row must fail before a phone gives up on a laptop it
+     * was happily using. A single missed probe is common — the radio is busy, or
+     * the laptop is mid-transfer to five other handsets — and treating one as
+     * proof the laptop has gone splits the fleet across two servers, which is
+     * far worse than being slow: a reveal published to one would only reach the
+     * phones that happened to be on it.
+     */
+    private const val FAILURES_BEFORE_GIVING_UP = 3
+
+    @Volatile
+    private var consecutiveFailures = 0
+
+    /** Which address the failures above belong to, so a new one starts clean. */
+    @Volatile
+    private var probedBase: String? = null
 
     private val probe = OkHttpClient.Builder()
         .connectTimeout(HEALTH_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -38,12 +55,25 @@ object Servers {
     fun resolve(ctx: Context): String {
         val local = MessageStore.getLocalServer(ctx)
             ?: BuildConfig.LOCAL_SERVER.takeIf { it.isNotEmpty() }
+        if (local != probedBase) {
+            probedBase = local
+            consecutiveFailures = 0
+        }
         if (!local.isNullOrEmpty() && isReachable(local)) {
+            consecutiveFailures = 0
             MessageStore.setActiveServer(ctx, local)
             return local
         }
         if (!local.isNullOrEmpty()) {
-            Log.i(TAG, "Laptop at $local not answering — falling back to ${Config.NTFY_SERVER}")
+            consecutiveFailures++
+            if (consecutiveFailures < FAILURES_BEFORE_GIVING_UP) {
+                Log.i(TAG, "Laptop at $local missed a probe " +
+                    "($consecutiveFailures/$FAILURES_BEFORE_GIVING_UP) — staying on it")
+                MessageStore.setActiveServer(ctx, local)
+                return local
+            }
+            Log.i(TAG, "Laptop at $local not answering after $consecutiveFailures tries" +
+                " — falling back to ${Config.NTFY_SERVER}")
         }
         MessageStore.setActiveServer(ctx, Config.NTFY_SERVER)
         return Config.NTFY_SERVER

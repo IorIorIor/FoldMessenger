@@ -170,6 +170,48 @@ function authQuery() {
   return `?auth=${b64}`;
 }
 
+/**
+ * The token as a query parameter, for polling.
+ *
+ * An Authorization header is not a "simple" CORS header, so every poll carrying
+ * one costs a preflight first - and a preflight is sent without the token, so it
+ * counts against ntfy's anonymous per-IP limit. Polling twice a second that way
+ * earns an HTTP 429 within minutes, which the browser reports as the useless
+ * "Failed to fetch". Passing the token in the URL keeps a poll a plain GET with
+ * no preflight at all.
+ */
+function authParam() {
+  const q = authQuery();
+  return q ? "&" + q.slice(1) : "";
+}
+
+/**
+ * A publish URL carrying the token and any options as query parameters.
+ *
+ * Everything the app needs can travel in the URL, which keeps a publish a plain
+ * POST with a simple content type - and therefore a request the browser sends
+ * straight out. The moment a custom header or an Authorization header is added
+ * it becomes a preflighted request instead, and the preflight goes out without
+ * the token, so it is judged against ntfy's anonymous per-IP limit. That is what
+ * produced HTTP 429 and the browser's unhelpful "Failed to fetch".
+ */
+function publishUrl(topic, extra = {}) {
+  const p = new URLSearchParams();
+  const q = authQuery();                       // "?auth=..."
+  if (q) p.set("auth", q.slice("?auth=".length));
+  for (const [k, v] of Object.entries(extra)) if (v) p.set(k, v);
+  const qs = p.toString();
+  return `${SERVER}/${topic}${qs ? "?" + qs : ""}`;
+}
+
+/** Publish a short command. Body is plain text, so no preflight. */
+function publishText(topic, body) {
+  return fetch(publishUrl(topic), {
+    method: "POST",
+    body: new Blob([body], { type: "text/plain" })
+  });
+}
+
 function paintToken() {
   const el = document.getElementById("tokenState");
   el.textContent = ntfyToken ? "✓ token opgeslagen — hogere limieten actief" : "⚠ geen token — anonieme limieten";
@@ -221,7 +263,7 @@ async function selectTable(t) {
   paintPhones();
 startResults();
   try {
-    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: `__TABLE__${t}`, headers: authHeaders() });
+    const res = await publishText(`${TOPIC_BASE}-all`, `__TABLE__${t}`);
     addLog(res.ok ? `✓ Tafel ${t} actief` : `✗ Tafel ${t} — HTTP ${res.status}`, res.ok ? "ok" : "err");
   } catch (e) {
     addLog(`✗ Tafel ${t} — ${e.message}`, "err");
@@ -390,14 +432,18 @@ async function publishTo(t, { file, text, title }) {
   try {
     let res;
     if (file) {
-      const headers = authHeaders({ "X-Filename": (file.name || "secret").replace(/[^\x20-\x7e]/g, "_") });
-      if (text) headers["X-Message"] = headerValue(text);
-      if (title) headers["X-Title"] = title;
-      res = await fetch(`${SERVER}/${t.topic}`, { method: "PUT", body: file, headers });
+      const filename = (file.name || "secret").replace(/[^\x20-\x7e]/g, "_");
+      // Blob retyped as text/plain purely to keep this a simple request; ntfy
+      // stores the bytes untouched, which is verified byte-for-byte.
+      res = await fetch(publishUrl(t.topic, { title, filename, message: text || undefined }), {
+        method: "POST",
+        body: new Blob([file], { type: "text/plain" })
+      });
     } else {
-      const headers = authHeaders();
-      if (title) headers["X-Title"] = title;
-      res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text, headers });
+      res = await fetch(publishUrl(t.topic, { title }), {
+        method: "POST",
+        body: new Blob([text], { type: "text/plain" })
+      });
     }
     if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
     else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");
@@ -447,9 +493,7 @@ document.getElementById("preload").addEventListener("click", async () => {
 document.getElementById("reveal").addEventListener("click", async () => {
   startAckRound(true);
   try {
-    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, {
-      method: "POST", body: "__REVEAL__", headers: authHeaders()
-    });
+    const res = await publishText(`${TOPIC_BASE}-all`, "__REVEAL__");
     addLog(res.ok ? "✨ Onthuld." : `✗ Onthullen mislukt — HTTP ${res.status}`, res.ok ? "ok" : "err");
   } catch (e) {
     addLog(`✗ Onthullen mislukt — ${e.message}`, "err");
@@ -460,7 +504,12 @@ document.getElementById("reveal").addEventListener("click", async () => {
 // Each phone says when it finished loading and when it alerted, with the elapsed
 // time measured on its own clock — so six handsets that disagree about the time
 // still give comparable numbers.
-const ACK_POLL_MS = 2000;
+// A poll every few seconds, on top of the votes poll, is enough sustained
+// traffic to earn ntfy's per-IP rate limit during a long evening - which the
+// browser reports as "Failed to fetch" with nothing to say why. So the table
+// listens on one open connection instead, and polls only to catch up at the
+// start of a round and as a slow safety net if that connection dies.
+const ACK_POLL_MS = 15000;
 const acks = new Map();
 let acksSince = 0;
 let acksPolling = false;
@@ -478,17 +527,50 @@ function startAckRound(keepReady) {
     document.getElementById("reveal").disabled = true;
   }
   renderAcks();
+  pollAcks();          // catch up on anything already reported
+  openAckStream();
   if (acksPolling) return;
   acksPolling = true;
-  pollAcks();
   setInterval(pollAcks, ACK_POLL_MS);
+}
+
+/**
+ * One long-lived connection for the phones' reports. A stream only delivers
+ * what is published while it happens to be connected, so it is paired with the
+ * catch-up poll above rather than trusted on its own.
+ */
+let ackStream = null;
+function openAckStream() {
+  if (ackStream && ackStream.readyState !== 2) return;   // 2 = CLOSED
+  try {
+    ackStream = new EventSource(
+      `${SERVER}/${TOPIC_BASE}-acks/sse?since=${acksSince || "5m"}${authParam()}`
+    );
+    ackStream.onmessage = (e) => {
+      try { if (absorbAck(JSON.parse(e.data))) renderAcks(); } catch (_) {}
+    };
+    ackStream.onerror = () => { /* the safety poll covers it; it reconnects itself */ };
+  } catch (_) { /* polling still covers it */ }
+}
+
+/** @return true when the table changed. */
+function absorbAck(m) {
+  if (m.event !== "message" || !m.message) return false;
+  let p; try { p = JSON.parse(m.message); } catch (_) { return false; }
+  if (typeof p.phone !== "number" || p.phone < 1 || p.phone > PHONE_COUNT) return false;
+  if (acksSince && (m.time || 0) < acksSince) return false;
+  const at = (m.time || 0) * 1000;
+  const entry = acks.get(p.phone) || {};
+  if (p.phase === "ready") { entry.ready = p.ms; entry.readyAt = at; entry.note = p.note; }
+  if (p.phase === "shown") { entry.shown = p.ms; entry.shownAt = at; entry.note = p.note; }
+  acks.set(p.phone, entry);
+  return true;
 }
 
 async function pollAcks() {
   try {
     const res = await fetch(
-      `${SERVER}/${TOPIC_BASE}-acks/json?poll=1&since=${acksSince || "1h"}`,
-      { headers: authHeaders() }
+      `${SERVER}/${TOPIC_BASE}-acks/json?poll=1&since=${acksSince || "1h"}${authParam()}`
     );
     if (!res.ok) return;
     const body = await res.text();
@@ -496,16 +578,7 @@ async function pollAcks() {
     for (const line of body.split("\n")) {
       if (!line.trim()) continue;
       let m; try { m = JSON.parse(line); } catch (_) { continue; }
-      if (m.event !== "message" || !m.message) continue;
-      let p; try { p = JSON.parse(m.message); } catch (_) { continue; }
-      if (typeof p.phone !== "number" || p.phone < 1 || p.phone > PHONE_COUNT) continue;
-      if (acksSince && (m.time || 0) < acksSince) continue;
-      const at = (m.time || 0) * 1000;
-      const entry = acks.get(p.phone) || {};
-      if (p.phase === "ready") { entry.ready = p.ms; entry.readyAt = at; entry.note = p.note; }
-      if (p.phase === "shown") { entry.shown = p.ms; entry.shownAt = at; entry.note = p.note; }
-      acks.set(p.phone, entry);
-      changed = true;
+      if (absorbAck(m)) changed = true;
     }
     if (changed) renderAcks();
   } catch (_) { /* offline; next tick */ }
@@ -528,9 +601,12 @@ function renderAcks() {
   for (const [phone, a] of rows) {
     const name = (TABLES[activeTable - 1] || [])[phone - 1] || "";
     const note = a.note ? ` <span class="err">${a.note}</span>` : "";
+    // A negative time is the phone saying it had nothing to do, not a duration.
     const cell = v => v === undefined
       ? "<td align='right' class='waiting'>wachten…</td>"
-      : `<td align='right' class='done'>${v} ms</td>`;
+      : v < 0
+        ? "<td align='right' class='waiting'>—</td>"
+        : `<td align='right' class='done'>${v} ms</td>`;
     html += `<tr><td>${phone}${name ? " " + name : ""}${note}</td>` +
       cell(a.ready) + cell(a.shown) + "</tr>";
   }
@@ -545,9 +621,7 @@ function renderAcks() {
 document.getElementById("selfies").addEventListener("click", async () => {
   if (!confirm("Alle telefoons om een selfie vragen?")) return;
   try {
-    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, {
-      method: "POST", body: "__SELFIE__", headers: authHeaders()
-    });
+    const res = await publishText(`${TOPIC_BASE}-all`, "__SELFIE__");
     addLog(res.ok ? `✓ Selfies gevraagd ${new Date().toLocaleTimeString()}`
                   : `✗ Selfies — HTTP ${res.status}`, res.ok ? "ok" : "err");
   } catch (e) {
@@ -559,7 +633,7 @@ document.getElementById("selfies").addEventListener("click", async () => {
 document.getElementById("finalq").addEventListener("click", async () => {
   if (!confirm("Send the final question to ALL phones?")) return;
   try {
-    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__FINALQUESTION__", headers: authHeaders() });
+    const res = await publishText(`${TOPIC_BASE}-all`, "__FINALQUESTION__");
     if (res.ok) {
       addLog(`✓ Final question sent ${new Date().toLocaleTimeString()}`, "ok");
       startVoteRound();
@@ -608,8 +682,7 @@ async function pollVotes() {
   try {
     const since = votesSince || VOTE_LOOKBACK;
     const res = await fetch(
-      `${SERVER}/${TOPIC_BASE}-votes/json?poll=1&since=${since}`,
-      { headers: authHeaders() }
+      `${SERVER}/${TOPIC_BASE}-votes/json?poll=1&since=${since}${authParam()}`
     );
     if (!res.ok) return;
     const text = await res.text();
@@ -667,7 +740,7 @@ function renderResults() {
 document.getElementById("nextround").addEventListener("click", async () => {
   if (!confirm("Start the next round? This clears the message on ALL phones.")) return;
   try {
-    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__NEXTROUND__", headers: authHeaders() });
+    const res = await publishText(`${TOPIC_BASE}-all`, "__NEXTROUND__");
     acks.clear(); ackVisible = false; renderAcks();
     if (res.ok) {
       addLog(`✓ Next round — all phones cleared ${new Date().toLocaleTimeString()}`, "ok");

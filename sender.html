@@ -38,7 +38,19 @@
     width: 100%; min-height: 80px; background: #1c1c1c; color: #eee;
     border: 1px solid #333; border-radius: 6px; padding: 10px; font-size: 15px; resize: vertical;
   }
-  input[type=file] { font-size: 13px; color: #aaa; }
+  /* A square big enough to drop a file onto, and to hit without aiming */
+  #drop {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; width: 150px; height: 150px; cursor: pointer;
+    border: 2px dashed #444; border-radius: 10px; background: #1c1c1c;
+    color: #888; font-size: 13px; text-align: center;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+  #drop:hover { border-color: #666; color: #bbb; }
+  #drop.over { border-color: #4a8a4a; background: #1d2a1d; color: #9c9; }
+  #drop.filled { border-style: solid; border-color: #4a8a4a; color: #9c9; }
+  .drop-icon { font-size: 30px; line-height: 1; }
+  .drop-text { padding: 0 10px; }
   input#token {
     width: 100%; background: #1c1c1c; color: #eee; border: 1px solid #333;
     border-radius: 6px; padding: 10px; font-size: 15px;
@@ -63,10 +75,20 @@
   #ackTable table { width:100%; border-collapse:collapse; font-size:14px; }
   #ackTable th { color:#888; font-weight:500; padding-bottom:6px; font-size:12px;
     text-transform:uppercase; letter-spacing:0.06em; }
-  #ackTable td { padding:7px 0; border-top:1px solid #333; }
-  #ackTable .waiting { color:#888; }
-  #ackTable .done { color:#7c7; font-weight:600; }
-  #ackTable .count { margin-top:8px; font-size:13px; }
+  #ackTable td { padding:8px 0; border-top:1px solid #333; }
+  #ackTable .ms { color:#666; font-size:12px; }
+  #ackTable .st-loading { color:#888; }
+  #ackTable .st-loaded { color:#7c7; font-weight:600; }
+  #ackTable .st-revealed { color:#8ad; font-weight:600; }
+  #ackTable .st-none { color:#e77; }
+  #ackTable .count { margin-top:10px; font-size:13px; }
+
+  /* three dots that fade in turn, so a row that is still working looks busy
+     rather than stuck */
+  .dots span { animation: dot 1.4s infinite both; }
+  .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dot { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
   button.linkbtn {
     width: auto; margin-top: 10px; padding: 6px 10px; font-size: 13px; font-weight: 500;
     background: transparent; color: #e77; border: 1px solid #633; border-radius: 6px;
@@ -96,21 +118,27 @@
 <p class="sub">Stuur een vooraf gemaakt secret naar de Fold-telefoons</p>
 
 <fieldset>
-  <legend>To</legend>
+  <legend>Tafel</legend>
+  <div class="tables" id="tables"></div>
+</fieldset>
+
+<fieldset>
+  <legend>Naar welke telefoons</legend>
   <label class="all-label"><input type="checkbox" id="all"> <strong>All phones</strong></label>
   <div class="phones" id="phones"></div>
 </fieldset>
 
-<fieldset id="tokenBox">
-  <legend>ntfy-token</legend>
-  <input type="password" id="token" placeholder="tk_… (eenmalig, blijft in deze browser)">
-  <button type="button" id="saveToken" class="linkbtn">Opslaan</button>
-  <div id="tokenState"></div>
-</fieldset>
-
 <fieldset>
-  <legend>Tafel</legend>
-  <div class="tables" id="tables"></div>
+  <legend>Secret (afbeelding of video)</legend>
+  <label id="drop" for="file">
+    <span class="drop-icon">＋</span>
+    <span class="drop-text">Kies of sleep</span>
+  </label>
+  <input type="file" id="file" accept="image/*,video/*" hidden>
+  <button type="button" id="clearfile" class="linkbtn" hidden>✕ Remove file</button>
+  <div id="fileInfo"></div>
+  <img id="preview" alt="">
+  <video id="previewvid" controls muted style="max-width:100%;max-height:200px;margin-top:10px;border-radius:6px;display:none"></video>
 </fieldset>
 
 <fieldset>
@@ -119,33 +147,32 @@
 </fieldset>
 
 <fieldset>
-  <legend>Secret (afbeelding of video)</legend>
-  <input type="file" id="file" accept="image/*,video/*">
-  <button type="button" id="clearfile" class="linkbtn" hidden>✕ Remove file</button>
-  <div id="fileInfo"></div>
-  <img id="preview" alt="">
-  <video id="previewvid" controls muted style="max-width:100%;max-height:200px;margin-top:10px;border-radius:6px;display:none"></video>
-</fieldset>
-
-<button id="send">Send</button>
-
-<fieldset>
   <legend>Gelijktijdig onthullen</legend>
   <p class="hint">Laad het secret eerst stil naar alle telefoons — er gebeurt dan
     niets op de toestellen. Zodra ze allemaal klaar staan onthult één druk op de
     knop ze tegelijk, want er hoeft niets meer gedownload te worden.</p>
-  <button id="preload" class="accent">📥 LAAD SECRET (stil)</button>
-  <button id="reveal" class="accent" disabled>✨ ONTHUL NU</button>
+  <button id="preload" class="accent">📥 LAAD SECRET</button>
   <div id="ackTable"></div>
+  <button id="reveal" class="accent" disabled>✨ ONTHUL NU</button>
 </fieldset>
-<button id="selfies" class="accent">📸 VRAAG SELFIES</button>
-<button id="finalq" class="accent">❓ SEND FINAL QUESTION</button>
-<button id="nextround" class="secondary">⏭ Next round — clear all phones</button>
 
+<button id="selfies" class="accent">📸 VRAAG SELFIES</button>
+
+<button id="finalq" class="accent">❓ SEND FINAL QUESTION</button>
 <fieldset id="resultsBox" hidden>
   <legend>Antwoorden</legend>
   <div id="results"></div>
 </fieldset>
+
+<button id="nextround" class="secondary">⏭ Next round — clear all phones</button>
+
+<fieldset id="tokenBox">
+  <legend>ntfy-token</legend>
+  <input type="password" id="token" placeholder="tk_… (eenmalig, blijft in deze browser)">
+  <button type="button" id="saveToken" class="linkbtn">Opslaan</button>
+  <div id="tokenState"></div>
+</fieldset>
+
 <div id="log"></div>
 
 <script>
@@ -341,6 +368,12 @@ function showFile(f) {
   previewVid.style.display = "none";
   previewVid.pause();
   clearFileBtn.hidden = !f;
+  const zone = document.getElementById("drop");
+  zone.classList.toggle("filled", !!f);
+  zone.querySelector(".drop-icon").textContent = f ? "✓" : "＋";
+  zone.querySelector(".drop-text").textContent = f
+    ? (f.name.length > 22 ? f.name.slice(0, 20) + "…" : f.name)
+    : "Kies of sleep";
   if (!f) {
     setFileInfo(null);
     return;
@@ -356,6 +389,22 @@ function showFile(f) {
 }
 
 fileInput.addEventListener("change", () => showFile(fileInput.files[0]));
+
+// The square doubles as a drop target. The label already opens the picker on a
+// click, so this only has to handle the dragging.
+const dropZone = document.getElementById("drop");
+["dragenter", "dragover"].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove("over"); }));
+dropZone.addEventListener("drop", e => {
+  const f = e.dataTransfer?.files?.[0];
+  if (!f) return;
+  const dt = new DataTransfer();
+  dt.items.add(f);
+  fileInput.files = dt.files;      // so everything else reads it the same way
+  showFile(f);
+});
 
 // Drop the attachment so a text-only secret can be sent without reloading.
 clearFileBtn.addEventListener("click", () => {
@@ -414,38 +463,6 @@ function addLog(msg, cls) {
   log.prepend(line);
 }
 
-document.getElementById("send").addEventListener("click", async () => {
-  const text = document.getElementById("text").value.trim();
-  let file = fileInput.files[0];
-  const to = targets();
-
-  if (to.length === 0) { addLog("⚠ Kies minstens één telefoon.", "err"); return; }
-  if (!text && !file) { addLog("⚠ Kies een afbeelding/video of typ een tekst.", "err"); return; }
-
-  const btn = document.getElementById("send");
-  btn.disabled = true;
-  btn.textContent = "Sending…";
-
-  try {
-    if (file && file.size > MAX_ATTACHMENT_BYTES) {
-      addLog(`⚠ Bestand te groot — ${formatBytes(file.size)} is meer dan 25 MB.`, "err");
-      btn.disabled = false;
-      btn.textContent = "Send";
-      return;
-    }
-
-    // In parallel: uploading to six phones one after another made the last one
-    // start its round a whole upload behind the first.
-    expectedList = phonesIn(to);
-    expectedPhones = expectedList.length;
-    startAckRound();
-    await Promise.all(to.map((t, i) =>
-      new Promise(r => setTimeout(r, i * 400)).then(() => publishTo(t, { file, text }))));
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Send";
-  }
-});
 
 /** Which handsets a target list covers; "All phones" means every one of them. */
 function phonesIn(to) {
@@ -629,8 +646,8 @@ async function pollAcks() {
 function renderAcks() {
   const box = document.getElementById("ackTable");
   if (!ackVisible) { box.innerHTML = ""; return; }
-  // Every targeted phone gets a row straight away, waiting, so pressing the
-  // button visibly does something before any phone has had time to answer.
+  // Every targeted phone gets a row straight away, so pressing the button
+  // visibly does something before any phone has had time to answer.
   const rows = expectedList.map(p => [p, acks.get(p) || {}]);
   for (const [p, a] of acks) if (!expectedList.includes(p)) rows.push([p, a]);
   rows.sort((a, b) => a[0] - b[0]);
@@ -638,19 +655,23 @@ function renderAcks() {
 
   document.getElementById("reveal").disabled = ready.length < expectedPhones;
 
-  let html = "<table><tr><th align='left'>Telefoon</th>" +
-    "<th align='right'>Geladen</th><th align='right'>Getoond</th></tr>";
+  const DOTS = '<span class="dots"><span>.</span><span>.</span><span>.</span></span>';
+  let html = "<table>";
   for (const [phone, a] of rows) {
     const name = (TABLES[activeTable - 1] || [])[phone - 1] || "";
-    const note = a.note ? ` <span class="err">${a.note}</span>` : "";
-    // A negative time is the phone saying it had nothing to do, not a duration.
-    const cell = v => v === undefined
-      ? "<td align='right' class='waiting'>wachten…</td>"
-      : v < 0
-        ? "<td align='right' class='waiting'>—</td>"
-        : `<td align='right' class='done'>${v} ms</td>`;
-    html += `<tr><td>${phone}${name ? " " + name : ""}${note}</td>` +
-      cell(a.ready) + cell(a.shown) + "</tr>";
+    let state, cls, ms = "";
+    if (a.shown !== undefined && a.shown >= 0) {
+      state = "onthuld"; cls = "st-revealed"; ms = `${a.shown} ms`;
+    } else if (a.shown !== undefined) {
+      state = "niets geladen"; cls = "st-none";      // revealed with nothing staged
+    } else if (a.ready !== undefined) {
+      state = "geladen"; cls = "st-loaded"; ms = `${a.ready} ms`;
+    } else {
+      state = "laden" + DOTS; cls = "st-loading";
+    }
+    html += `<tr><td>${phone}${name ? " " + name : ""}</td>` +
+      `<td align="right" class="${cls}">${state}</td>` +
+      `<td align="right" class="ms">${ms}</td></tr>`;
   }
   html += "</table>";
   const allReady = ready.length >= expectedPhones;

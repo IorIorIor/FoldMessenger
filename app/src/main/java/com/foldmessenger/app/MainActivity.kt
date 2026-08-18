@@ -565,12 +565,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Tonight's selfie for a player, falling back to their preloaded photo. */
-    private fun faceOf(person: Tables.Player): Drawable? {
+    /**
+     * @param drawnPx roughly how large the face will be on screen. A selfie is
+     *   stored at 900px; decoding all of that for a thumbnail, five times on the
+     *   main thread, is the pause when the closing question comes up. Pass 0 to
+     *   decode in full, for the one face that fills the screen.
+     */
+    private fun faceOf(person: Tables.Player, drawnPx: Int = 0): Drawable? {
         val selfie = Faces.get(this, MessageStore.getActiveTable(this), person.seat)
         if (selfie != null) {
-            BitmapFactory.decodeFile(selfie.absolutePath)?.let { return circularBitmap(it) }
+            val bitmap = if (drawnPx > 0) decodeSampled(selfie.absolutePath, drawnPx * 2)
+                         else BitmapFactory.decodeFile(selfie.absolutePath)
+            bitmap?.let { return circularBitmap(it) }
         }
         return circularAvatar(person.avatarRes)
+    }
+
+    /** Decode [path] with the largest power-of-two shrink that still leaves it at least [minEdge]. */
+    private fun decodeSampled(path: String, minEdge: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= minEdge && bounds.outHeight / (sample * 2) >= minEdge) sample *= 2
+        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
     /** Centre-cropped circular avatar, so non-square photos still look right. */
@@ -750,8 +768,9 @@ class MainActivity : AppCompatActivity() {
             val avatar = cell.findViewById<ImageView>(R.id.vote_avatar)
             val check = cell.findViewById<ImageView>(R.id.vote_check)
             cell.findViewById<TextView>(R.id.vote_name).text = person.name
-            avatar.setImageDrawable(faceOf(person))
-            avatar.alpha = UNPICKED_ALPHA
+            avatar.setImageDrawable(
+                faceOf(person, resources.getDimensionPixelSize(R.dimen.vote_avatar_size))
+            )
             cell.setOnClickListener {
                 // exactly one second date: picking someone releases the last choice
                 pickedSeat = if (pickedSeat == person.seat) null else person.seat
@@ -764,7 +783,12 @@ class MainActivity : AppCompatActivity() {
         paintPicks()
     }
 
-    /** Reflect the single choice across the grid. */
+    /**
+     * Reflect the single choice across the grid. Every face stays fully opaque —
+     * these are the people at the table, and dimming five of them read as five
+     * of them being unavailable. The pick is marked by the tick and by the face
+     * itself coming forward a fifth larger.
+     */
     private fun paintPicks() {
         for (i in 0 until voteGrid.childCount) {
             val cell = voteGrid.getChildAt(i)
@@ -772,9 +796,10 @@ class MainActivity : AppCompatActivity() {
             val chosen = seat == pickedSeat
             cell.findViewById<ImageView>(R.id.vote_check).visibility =
                 if (chosen) View.VISIBLE else View.GONE
+            val scale = if (chosen) PICKED_SCALE else 1f
             cell.findViewById<ImageView>(R.id.vote_avatar).animate()
-                .alpha(if (chosen) 1f else UNPICKED_ALPHA)
-                .setDuration(140)
+                .scaleX(scale).scaleY(scale)
+                .setDuration(160)
                 .start()
         }
         doneButton.alpha = if (pickedSeat == null) 0.5f else 1f
@@ -996,7 +1021,8 @@ class MainActivity : AppCompatActivity() {
         private const val THANKS_MS = 3_000L
 
         /** Dimming on a dater who has not been picked. */
-        private const val UNPICKED_ALPHA = 0.45f
+        /** How much the chosen face grows; the only thing that sets it apart besides the tick. */
+        private const val PICKED_SCALE = 1.2f
 
         /** How much of the screen a secret's image or clip takes up. */
         private const val MEDIA_SCREEN_FRACTION = 0.60f

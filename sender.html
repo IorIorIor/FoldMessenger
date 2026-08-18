@@ -535,8 +535,14 @@ document.getElementById("preload").addEventListener("click", async () => {
 });
 
 // The reveal itself: a few bytes to every phone at once.
+let revealedAt = 0;
 document.getElementById("reveal").addEventListener("click", async () => {
   startAckRound(true);
+  revealedAt = Date.now();
+  // A loaded phone that has not confirmed the reveal after this long has
+  // missed it. The phone itself cannot report that - it does not know it was
+  // supposed to have something - so it is judged here, by its silence.
+  setTimeout(renderAcks, 8000);
   try {
     const res = await publishText(`${TOPIC_BASE}-all`, "__REVEAL__");
     addLog(res.ok ? "✨ Onthuld." : `✗ Onthullen mislukt — HTTP ${res.status}`, res.ok ? "ok" : "err");
@@ -569,6 +575,7 @@ function startAckRound(keepReady) {
     for (const [, a] of acks) { a.shown = undefined; a.shownAt = undefined; }
   } else {
     acks.clear();
+    revealedAt = 0;
     document.getElementById("reveal").disabled = true;
   }
   renderAcks();
@@ -663,8 +670,10 @@ function renderAcks() {
     let state, cls, ms = "";
     if (a.shown !== undefined && a.shown >= 0) {
       state = "onthuld"; cls = "st-revealed"; ms = `${a.shown} ms`;
-    } else if (a.shown !== undefined) {
-      state = "niets geladen"; cls = "st-none";      // revealed with nothing staged
+    } else if (a.ready !== undefined && revealedAt && Date.now() - revealedAt > 8000) {
+      state = "niet onthuld"; cls = "st-none";       // loaded, revealed, never confirmed
+    } else if (a.ready !== undefined && revealedAt) {
+      state = "onthullen" + DOTS; cls = "st-loading";
     } else if (a.ready !== undefined) {
       state = "geladen"; cls = "st-loaded"; ms = `${a.ready} ms`;
     } else {

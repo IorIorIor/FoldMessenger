@@ -407,8 +407,12 @@ class PushService : Service() {
         // itself rather than the spread of six downloads.
         if (text == CMD_REVEAL && attachment == null) {
             if (!MessageStore.promoteStaged(this)) {
-                Log.w(TAG, "Reveal arrived with nothing staged — ignoring")
-                AckSender.send(this, "shown", -1, "niets geladen")
+                // Not an error: the reveal is a broadcast and this phone simply
+                // was not part of the round. Say nothing - every ack draws on
+                // the one account-wide request allowance the whole table shares,
+                // and five phones reporting "not me" is a quarter of a round's
+                // worth of it spent on nothing.
+                Log.i(TAG, "Reveal arrived with nothing staged — not for this phone")
                 return
             }
             getSystemService(NotificationManager::class.java).cancel(NOTIF_ID_MESSAGE)

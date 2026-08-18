@@ -106,12 +106,15 @@
                     android:textColor="@android:color/white"
                     android:textSize="@dimen/final_question_size" />
 
+                <!-- clipChildren off: the chosen face scales up past its cell -->
                 <GridLayout
                     android:id="@+id/vote_grid"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center_horizontal"
                     android:layout_marginTop="@dimen/final_gap"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
                     android:columnCount="3" />
 
                 <Button

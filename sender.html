@@ -134,6 +134,7 @@
 
 <button id="uselocal" class="accent">📡 ZET TELEFOONS OP DEZE LAPTOP</button>
 <button id="usentfy" class="secondary">☁︎ Terug naar internet (ntfy)</button>
+<div id="laptopState" class="hint"></div>
 <button id="selfies" class="accent">📸 VRAAG SELFIES</button>
 <button id="finalq" class="accent">❓ SEND FINAL QUESTION</button>
 <button id="nextround" class="secondary">⏭ Next round — clear all phones</button>
@@ -552,13 +553,60 @@ function renderAcks() {
 // Point the phones at this laptop. Sent over whichever channel is working now —
 // over ntfy the first time, so the phones can be told where to go without
 // anyone touching them.
+// The address to hand the phones is the laptop's address on the Wi-Fi, which is
+// not necessarily the one this page was opened at: open it at localhost and
+// location.origin is "http://localhost:8080", which on a phone means the phone
+// itself. So the server is asked what it is actually reachable as.
+let laptopBase = null;
+
+async function findLaptopBase() {
+  if (!LOCAL) return null;
+  try {
+    const res = await fetch(`${location.origin}/health`);
+    if (!res.ok) return null;
+    const body = await res.json();
+    laptopBase = body.base || null;
+  } catch (_) { laptopBase = null; }
+  paintLaptopBase();
+  return laptopBase;
+}
+
+function paintLaptopBase() {
+  const el = document.getElementById("laptopState");
+  if (!el) return;
+  if (!LOCAL) {
+    el.textContent = "Deze pagina draait niet op de laptop-server — open http://<laptop-ip>:8080";
+    el.className = "hint err";
+  } else if (!laptopBase) {
+    el.textContent = "Laptop-adres onbekend — server niet bereikbaar?";
+    el.className = "hint err";
+  } else if (/^https?:\/\/(localhost|127\.|\[?::1)/i.test(laptopBase)) {
+    el.textContent = `⚠ De laptop ziet zichzelf als ${laptopBase} — niet op Wi-Fi? De telefoons kunnen dat adres niet bereiken.`;
+    el.className = "hint err";
+  } else {
+    el.textContent = `Telefoons gaan naar ${laptopBase}`;
+    el.className = "hint ok";
+  }
+}
+
 document.getElementById("uselocal").addEventListener("click", async () => {
   if (!LOCAL) {
     addLog("⚠ Open deze pagina vanaf de laptop-server (http://<laptop-ip>:8080) om dit te gebruiken.", "err");
     return;
   }
-  await broadcastServer(location.origin, `telefoons op ${location.origin}`);
+  const base = laptopBase || await findLaptopBase();
+  if (!base) {
+    addLog("⚠ Kan het adres van de laptop niet bepalen — draait de server nog?", "err");
+    return;
+  }
+  if (/^https?:\/\/(localhost|127\.|\[?::1)/i.test(base)) {
+    addLog(`⚠ De laptop ziet zichzelf alleen als ${base}. Dat adres wijst op een telefoon naar de telefoon zelf. Sluit de laptop aan op de Wi-Fi en probeer opnieuw.`, "err");
+    return;
+  }
+  await broadcastServer(base, `telefoons op ${base}`);
 });
+
+findLaptopBase();
 
 document.getElementById("usentfy").addEventListener("click", async () => {
   await broadcastServer("off", "telefoons terug op ntfy");

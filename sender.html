@@ -57,9 +57,16 @@
     border-radius: 8px; background: #fff; color: #111; cursor: pointer;
   }
   button:disabled { opacity: 0.5; cursor: default; }
-  .hint { color:#666; font-size:12px; margin:4px 0 10px; line-height:1.45; }
-  #ackTable th { color:#666; font-weight:500; padding-bottom:4px; }
-  #ackTable td { padding:3px 0; border-top:1px solid #eee; }
+  .hint { color:#888; font-size:12px; margin:4px 0 10px; line-height:1.45; }
+  .hint.ok { color:#7c7; } .hint.err { color:#e77; }
+  #ackTable { margin-top:12px; }
+  #ackTable table { width:100%; border-collapse:collapse; font-size:14px; }
+  #ackTable th { color:#888; font-weight:500; padding-bottom:6px; font-size:12px;
+    text-transform:uppercase; letter-spacing:0.06em; }
+  #ackTable td { padding:7px 0; border-top:1px solid #333; }
+  #ackTable .waiting { color:#888; }
+  #ackTable .done { color:#7c7; font-weight:600; }
+  #ackTable .count { margin-top:8px; font-size:13px; }
   button.linkbtn {
     width: auto; margin-top: 10px; padding: 6px 10px; font-size: 13px; font-weight: 500;
     background: transparent; color: #e77; border: 1px solid #633; border-radius: 6px;
@@ -368,7 +375,10 @@ document.getElementById("send").addEventListener("click", async () => {
 
     // In parallel: uploading to six phones one after another made the last one
     // start its round a whole upload behind the first.
-    expectedPhones = to.filter(t => t.phone >= 1).length || PHONE_COUNT;
+    expectedList = to.some(t => !t.phone)
+    ? Array.from({ length: PHONE_COUNT }, (_, i) => i + 1)   // "All phones"
+    : to.map(t => t.phone).sort((a, b) => a - b);
+  expectedPhones = expectedList.length;
     startAckRound();
     await Promise.all(to.map(t => publishTo(t, { file, text })));
   } finally {
@@ -433,17 +443,26 @@ document.getElementById("preload").addEventListener("click", async () => {
   const file = fileInput.files[0];
   const to = targets();
 
-  if (to.length === 0) { addLog("⚠ Kies minstens één telefoon.", "err"); return; }
-  if (!text && !file) { addLog("⚠ Kies een afbeelding/video of typ een tekst.", "err"); return; }
+  // Refusals show up directly under the button. The log is at the foot of a long
+  // page, so a warning there reads as the button doing nothing at all.
+  const refuse = (msg) => {
+    addLog(`⚠ ${msg}`, "err");
+    document.getElementById("ackTable").innerHTML = `<p class="hint err">⚠ ${msg}</p>`;
+    ackVisible = false;
+  };
+  if (to.length === 0) return refuse("Kies eerst minstens één telefoon.");
+  if (!text && !file) return refuse("Kies eerst een afbeelding/video of typ een tekst.");
   if (file && file.size > MAX_ATTACHMENT_BYTES) {
-    addLog(`⚠ Bestand te groot — ${formatBytes(file.size)} is meer dan ${formatBytes(MAX_ATTACHMENT_BYTES)}.`, "err");
-    return;
+    return refuse(`Bestand te groot — ${formatBytes(file.size)} is meer dan ${formatBytes(MAX_ATTACHMENT_BYTES)}.`);
   }
 
   const btn = document.getElementById("preload");
   btn.disabled = true;
   btn.textContent = "Laden…";
-  expectedPhones = to.filter(t => t.phone >= 1).length || PHONE_COUNT;
+  expectedList = to.some(t => !t.phone)
+    ? Array.from({ length: PHONE_COUNT }, (_, i) => i + 1)   // "All phones"
+    : to.map(t => t.phone).sort((a, b) => a - b);
+  expectedPhones = expectedList.length;
   startAckRound();
   try {
     await Promise.all(to.map(t => publishTo(t, { file, text, title: "preload" })));
@@ -470,9 +489,12 @@ const acks = new Map();        // phone -> { ready, shown, readyAt, shownAt }
 let acksSince = 0;
 let acksPolling = false;
 let expectedPhones = PHONE_COUNT;
+let expectedList = [];         // phones targeted this round, shown as rows immediately
+let ackVisible = false;
 
 function startAckRound(keepReady) {
   acksSince = Math.floor(Date.now() / 1000);
+  ackVisible = true;
   if (keepReady) {
     for (const [, a] of acks) { a.shown = undefined; a.shownAt = undefined; }
   } else {
@@ -528,25 +550,35 @@ async function pollAcks() {
 
 function renderAcks() {
   const box = document.getElementById("ackTable");
-  if (acks.size === 0) { box.innerHTML = ""; return; }
-  const rows = [...acks.entries()].sort((a, b) => a[0] - b[0]);
+  if (!ackVisible) { box.innerHTML = ""; return; }
+  // Every targeted phone gets a row straight away, waiting, so pressing the
+  // button visibly does something before any phone has had time to answer.
+  const rows = expectedList.map(p => [p, acks.get(p) || {}]);
+  for (const [p, a] of acks) if (!expectedList.includes(p)) rows.push([p, a]);
+  rows.sort((a, b) => a[0] - b[0]);
   const ready = rows.filter(([, a]) => a.ready !== undefined);
   const shownAt = rows.map(([, a]) => a.shownAt).filter(Boolean);
   const spread = shownAt.length > 1 ? Math.max(...shownAt) - Math.min(...shownAt) : null;
 
   document.getElementById("reveal").disabled = ready.length < expectedPhones;
 
-  let html = "<table style='width:100%;border-collapse:collapse;font-size:13px;margin-top:10px'>";
-  html += "<tr><th align='left'>Telefoon</th><th align='right'>Geladen</th><th align='right'>Getoond</th></tr>";
+  let html = "<table><tr><th align='left'>Telefoon</th>" +
+    "<th align='right'>Geladen</th><th align='right'>Getoond</th></tr>";
   for (const [phone, a] of rows) {
-    const note = a.note ? ` <span style="color:#c00">${a.note}</span>` : "";
-    html += `<tr><td>${phone}${note}</td>` +
-      `<td align='right'>${a.ready !== undefined ? a.ready + " ms" : "—"}</td>` +
-      `<td align='right'>${a.shown !== undefined ? a.shown + " ms" : "—"}</td></tr>`;
+    const name = (TABLES[activeTable - 1] || [])[phone - 1] || "";
+    const note = a.note ? ` <span class="err">${a.note}</span>` : "";
+    const cell = v => v === undefined
+      ? `<td align='right' class='waiting'>wachten…</td>`
+      : `<td align='right' class='done'>${v} ms</td>`;
+    html += `<tr><td>${phone}${name ? " " + name : ""}${note}</td>` +
+      cell(a.ready) + cell(a.shown) + "</tr>";
   }
   html += "</table>";
-  html += `<p class="hint">${ready.length}/${expectedPhones} klaar` +
-    (spread !== null ? ` — onthulling ${spread} ms uit elkaar` : "") + "</p>";
+  const allReady = ready.length >= expectedPhones;
+  html += `<p class="count ${allReady ? "ok" : "hint"}">` +
+    `${ready.length}/${expectedPhones} klaar` +
+    (allReady ? " — druk op ONTHUL NU" : "") +
+    (spread !== null ? ` · onthulling ${spread} ms uit elkaar` : "") + "</p>";
   box.innerHTML = html;
 }
 

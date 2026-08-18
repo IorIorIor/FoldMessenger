@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 34
         // Overridable for one-off builds: ./gradlew assembleRelease -PfmVersionCode=8 -PfmVersionName=1.7.9
-        versionCode = (project.findProperty("fmVersionCode") as String?)?.toInt() ?: 29
-        versionName = (project.findProperty("fmVersionName") as String?) ?: "1.21.0"
+        versionCode = (project.findProperty("fmVersionCode") as String?)?.toInt() ?: 30
+        versionName = (project.findProperty("fmVersionName") as String?) ?: "1.22.0"
     }
 
     // One shared signing key for every build (local and CI), so phones can
@@ -46,6 +46,10 @@ android {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("shared")
         }
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true   // android.util.Log is a no-op here
     }
 
     buildFeatures {
@@ -81,4 +85,5 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("junit:junit:4.13.2")
 }

@@ -53,8 +53,24 @@ object Servers {
      * main thread, and remember the answer for the senders.
      */
     fun resolve(ctx: Context): String {
-        val local = MessageStore.getLocalServer(ctx)
+        val known = MessageStore.getLocalServer(ctx)
             ?: BuildConfig.LOCAL_SERVER.takeIf { it.isNotEmpty() }
+
+        // Nothing known, or what we knew has stopped answering: go and look. The
+        // admin broadcast that used to carry the address travels over the
+        // internet, which is the one thing a venue cannot promise — and DHCP
+        // invalidates a remembered address anyway. Searching depends on neither.
+        val discovered =
+            if (known.isNullOrEmpty() || consecutiveFailures >= FAILURES_BEFORE_GIVING_UP) {
+                Discovery.findServer()?.also { found ->
+                    if (found != known) Log.i(TAG, "Discovered laptop at $found")
+                    MessageStore.setLocalServer(ctx, found)
+                    consecutiveFailures = 0
+                    probedBase = found
+                }
+            } else null
+
+        val local = discovered ?: known
         if (local != probedBase) {
             probedBase = local
             consecutiveFailures = 0

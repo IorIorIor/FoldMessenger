@@ -408,8 +408,19 @@ async function broadcast(command, label) {
       return res.ok;
     } catch (_) { return false; }
   }));
-  const ok = results.some(Boolean);
-  addLog(ok ? `${label} ✓` : `✗ ${label} — geen enkele server bereikbaar`, ok ? "ok" : "err");
+  // Report per server. Saying "sent" because the laptop accepted it is useless
+  // when the phones are listening to ntfy: you press the button, see a tick, and
+  // nothing happens, over and over.
+  const reached = servers.filter((_, i) => results[i]);
+  const failed = servers.filter((_, i) => !results[i]);
+  const ok = reached.length > 0;
+  const name = s => s.includes("ntfy.sh") ? "ntfy" : "laptop";
+  addLog(
+    ok ? `${label} — via ${reached.map(name).join(" + ")}` +
+         (failed.length ? ` (${failed.map(name).join(" + ")} onbereikbaar)` : "")
+       : `✗ ${label} — geen enkele server bereikbaar`,
+    failed.length ? "err" : "ok"
+  );
   return ok;
 }
 

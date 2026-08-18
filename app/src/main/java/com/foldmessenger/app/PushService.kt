@@ -187,7 +187,10 @@ class PushService : Service() {
         } else {
             startForeground(NOTIF_ID_SERVICE, notification)
         }
-        connectIfNeeded()
+        // Off the main thread: resolving a server can mean sweeping the subnet
+        // for the laptop, which takes seconds. Doing that here would hang the
+        // app on every start.
+        netHandler.post { connectIfNeeded() }
         scheduleUpdateChecks()
         startWatchdog()
         return START_STICKY

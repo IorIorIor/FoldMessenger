@@ -38,13 +38,48 @@ object Discovery {
 
     /** Blocking; call off the main thread. Returns e.g. "http://10.74.11.93:8080". */
     fun findServer(): String? {
-        val own = ownAddress() ?: run {
-            Log.i(TAG, "No IPv4 address — not on Wi-Fi?")
+        val subnets = candidateSubnets()
+        if (subnets.isEmpty()) {
+            Log.i(TAG, "No IPv4 address on any interface — not on a network?")
             return null
         }
-        val prefix = own.substringBeforeLast('.')
-        Log.i(TAG, "Sweeping $prefix.1-254 for a laptop on port $PORT (self is $own)")
+        Log.i(TAG, "Looking for a laptop on: " + subnets.joinToString { "${it.first} (${it.second}.0/24)" })
+        for ((iface, prefix) in subnets) {
+            sweep(prefix)?.let { base ->
+                Log.i(TAG, "Found the laptop at $base via $iface")
+                return base
+            }
+        }
+        Log.i(TAG, "No laptop answered on any subnet")
+        return null
+    }
 
+    /**
+     * Every network this phone is on, Wi-Fi first.
+     *
+     * A handset with mobile data enabled has more than one, and the cellular one
+     * carries a private address that looks just as plausible as the Wi-Fi one.
+     * Picking whichever came first meant sweeping the carrier's subnet and
+     * finding nothing, on a phone sitting on the right Wi-Fi the whole time.
+     */
+    private fun candidateSubnets(): List<Pair<String, String>> = try {
+        NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { iface ->
+                iface.inetAddresses.toList()
+                    .filterIsInstance<java.net.Inet4Address>()
+                    .filter { !it.isLoopbackAddress }
+                    .mapNotNull { it.hostAddress?.substringBeforeLast('.') }
+                    .map { iface.name to it }
+            }
+            .distinctBy { it.second }
+            .sortedBy { if (it.first.startsWith("wlan")) 0 else 1 }
+    } catch (e: Exception) {
+        Log.w(TAG, "Could not list interfaces: ${e.message}")
+        emptyList()
+    }
+
+    private fun sweep(prefix: String): String? {
         val pool = Executors.newFixedThreadPool(PARALLEL)
         return try {
             // Own address is swept too rather than skipped: a phone never runs a
@@ -59,16 +94,11 @@ object Discovery {
             // running, rather than whichever host happened to answer first.
             for (task in candidates) {
                 val host = try { task.get(6, TimeUnit.SECONDS) } catch (e: Exception) { null }
-                if (host != null && isOurServer(host)) {
-                    val base = "http://$host:$PORT"
-                    Log.i(TAG, "Found the laptop at $base")
-                    return base
-                }
+                if (host != null && isOurServer(host)) return "http://$host:$PORT"
             }
-            Log.i(TAG, "No laptop found on $prefix.0/24")
             null
         } catch (e: Exception) {
-            Log.w(TAG, "Sweep failed: ${e.message}")
+            Log.w(TAG, "Sweep of $prefix.0/24 failed: ${e.message}")
             null
         } finally {
             pool.shutdownNow()
@@ -91,13 +121,4 @@ object Discovery {
         false
     }
 
-    private fun ownAddress(): String? = try {
-        NetworkInterface.getNetworkInterfaces().toList()
-            .filter { it.isUp && !it.isLoopback }
-            .flatMap { it.inetAddresses.toList() }
-            .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }
-            ?.hostAddress
-    } catch (e: Exception) {
-        null
-    }
 }

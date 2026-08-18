@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 34
         // Overridable for one-off builds: ./gradlew assembleRelease -PfmVersionCode=8 -PfmVersionName=1.7.9
-        versionCode = (project.findProperty("fmVersionCode") as String?)?.toInt() ?: 30
-        versionName = (project.findProperty("fmVersionName") as String?) ?: "1.22.0"
+        versionCode = (project.findProperty("fmVersionCode") as String?)?.toInt() ?: 31
+        versionName = (project.findProperty("fmVersionName") as String?) ?: "1.23.0"
     }
 
     // One shared signing key for every build (local and CI), so phones can

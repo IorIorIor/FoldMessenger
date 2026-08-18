@@ -244,6 +244,24 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
+// A stack trace is the wrong thing to read five minutes before a show, and
+// "already in use" almost always means an earlier copy is still running rather
+// than anything being wrong.
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error('');
+    console.error(`  Port ${PORT} is already taken — most likely this server is`);
+    console.error('  already running in another window. Either use that one, or');
+    console.error('  stop it and start again:');
+    console.error('');
+    console.error(`    pkill -f "node.*server.js"`);
+    console.error('');
+  } else {
+    console.error(`  Could not start: ${err.message}`);
+  }
+  process.exit(1);
+});
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log('');
   console.log('  Fold Messenger — local server');

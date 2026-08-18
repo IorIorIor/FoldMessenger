@@ -7,3 +7,5 @@ local.properties
 foldmessenger-release.keystore
 keystore-password.txt
 ntfy-token.txt
+server/node_modules/
+server/data/

@@ -293,6 +293,10 @@ class MainActivity : AppCompatActivity() {
         when {
             message == null -> showIdle(phoneId)
             isCover -> showTeaser()
+            // Unfolded before the picture landed: hold on the teaser rather than
+            // reveal an empty card and pop the artwork in a second later. It
+            // flips to the real thing the moment the media attaches.
+            message.mediaPath == null && MessageStore.isMediaPending(this) -> showTeaser()
             else -> showMessage(message)
         }
     }

@@ -64,11 +64,17 @@ class PushService : Service() {
         /** Admin control message: ask every phone for a fresh selfie. */
         const val CMD_SELFIE = "__SELFIE__"
 
+        /** Admin control message: show the secret every phone has already fetched. */
+        const val CMD_REVEAL = "__REVEAL__"
+
         /** A shared selfie, titled "face:<table>:<seat>". */
         private val FACE_MESSAGE = Regex("^face:(\\d+):(\\d+)$")
 
         /** Admin control message "__TABLE__2": switch every phone to that table. */
         private val TABLE_COMMAND = Regex("^__TABLE__(\\d+)$")
+
+        /** Admin control message "__SERVER__http://10.0.0.5:8080", or "__SERVER__off". */
+        private val SERVER_COMMAND = Regex("^__SERVER__(.+)$")
 
         /** How often the watchdog checks that the socket is still there. */
         private const val WATCHDOG_MS = 15_000L
@@ -102,6 +108,13 @@ class PushService : Service() {
     /** Incoming secrets, one at a time so the newest is the one left showing. */
     private val executor = Executors.newSingleThreadExecutor()
 
+    /**
+     * Attachment bytes, kept off [executor] so a slow or stalled transfer cannot
+     * hold up the next command. "Next round" arriving behind a wedged 25MB
+     * download would leave a phone stuck on a dead secret.
+     */
+    private val mediaExecutor = Executors.newSingleThreadExecutor()
+
     /** Update checks, kept away from the secrets so they can never delay one. */
     private val updateExecutor = Executors.newSingleThreadExecutor()
 
@@ -122,6 +135,17 @@ class PushService : Service() {
     private val client = OkHttpClient.Builder()
         .pingInterval(10, TimeUnit.SECONDS)   // spot a dead socket quickly
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
+    /**
+     * Downloads get their own client with a hard ceiling on the whole call. The
+     * socket client deliberately has no read timeout — it must sit idle for
+     * hours — but a transfer that inherits that can hang for ever, which is one
+     * way a single phone ends up minutes behind the rest.
+     */
+    private val downloadClient = client.newBuilder()
+        .callTimeout(90, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -220,6 +244,7 @@ class PushService : Service() {
         destroyed = true
         webSocket?.cancel()
         executor.shutdown()
+        mediaExecutor.shutdown()
         updateExecutor.shutdown()
         netThread.quitSafely()
         try {
@@ -243,6 +268,7 @@ class PushService : Service() {
 
     private fun connect(phoneId: Int) {
         connectedPhoneId = phoneId
+        val base = Servers.resolve(this)
         val topics = "${Config.phoneTopic(phoneId)},${Config.allTopic()},${Config.facesTopic()}"
         // Resume from the last event we saw: the socket drops regularly (Wi-Fi
         // hiccups, doze), and without this anything published while it was down
@@ -250,11 +276,13 @@ class PushService : Service() {
         val since = MessageStore.getLastEventTime(this)
         val query = buildList {
             if (since > 0) add("since=$since")
-            Ntfy.authQueryParam()?.let { add(it) }
+            if (Servers.needsAuth(base)) Ntfy.authQueryParam()?.let { add(it) }
         }.joinToString("&")
-        val url = "${Config.NTFY_SERVER}/$topics/ws" + if (query.isNotEmpty()) "?$query" else ""
-        Log.i(TAG, "Connecting to ${Config.NTFY_SERVER}/$topics/ws (since=$since, auth=${Ntfy.hasToken})")
-        val request = Request.Builder().url(url).withAuth().build()
+        val url = "$base/$topics/ws" + if (query.isNotEmpty()) "?$query" else ""
+        Log.i(TAG, "Connecting to $base/$topics/ws (since=$since)")
+        val request = Request.Builder().url(url).let {
+            if (Servers.needsAuth(base)) it.withAuth() else it
+        }.build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "WebSocket open")
@@ -299,6 +327,10 @@ class PushService : Service() {
     }
 
     private fun handleEvent(json: String) {
+        // Everything downstream is measured against this: the moment the event
+        // reached this phone. Times from here are elapsed on one device, so six
+        // handsets with six different clocks still produce comparable numbers.
+        val recvAt = System.currentTimeMillis()
         val obj = try {
             JSONObject(json)
         } catch (e: Exception) {
@@ -333,10 +365,13 @@ class PushService : Service() {
             if (!attachmentUrl.isNullOrEmpty()) {
                 val table = match.groupValues[1].toInt()
                 val seat = match.groupValues[2].toInt()
-                downloadBytes(attachmentUrl)?.let { bytes ->
-                    Faces.save(this, table, seat, bytes)
-                    Log.i(TAG, "Cached selfie for table $table seat $seat")
-                    handler.post { MessageStore.onMessageChanged?.invoke() }
+                // on the media thread: eighteen selfies must not delay a secret
+                mediaExecutor.execute {
+                    downloadBytes(attachmentUrl)?.let { bytes ->
+                        Faces.save(this, table, seat, bytes)
+                        Log.i(TAG, "Cached selfie for table $table seat $seat")
+                        handler.post { MessageStore.onMessageChanged?.invoke() }
+                    }
                 }
             }
             return
@@ -344,11 +379,22 @@ class PushService : Service() {
 
         if (text == CMD_SELFIE && attachment == null) {
             MessageStore.setSelfieMode(this, true)
-            launchViewer()
-            handler.postDelayed({
-                if (MainActivity.isOnScreen) playAlert() else postMessageNotification()
-            }, VIEWER_LAUNCH_GRACE_MS)
+            alertAndShow()
             return
+        }
+
+        SERVER_COMMAND.find(text)?.let { match ->
+            if (attachment == null) {
+                val value = match.groupValues[1].trim()
+                val base = if (value.equals("off", true)) null else value.trimEnd('/')
+                MessageStore.setLocalServer(this, base)
+                Log.i(TAG, "Server set to ${base ?: "ntfy only"}; reconnecting")
+                // come back on the new address straight away
+                webSocket?.cancel()
+                webSocket = null
+                netHandler.post { connectIfNeeded() }
+                return
+            }
         }
 
         TABLE_COMMAND.find(text)?.let { match ->
@@ -365,10 +411,7 @@ class PushService : Service() {
         if (text == CMD_FINAL_QUESTION && attachment == null) {
             MessageStore.startFinalQuestion(this)
             getSystemService(NotificationManager::class.java).cancel(NOTIF_ID_MESSAGE)
-            launchViewer()
-            handler.postDelayed({
-                if (MainActivity.isOnScreen) playAlert() else postMessageNotification()
-            }, VIEWER_LAUNCH_GRACE_MS)
+            alertAndShow()
             return
         }
 
@@ -379,16 +422,29 @@ class PushService : Service() {
             return
         }
 
-        var mediaPath: String? = null
-        if (!attachmentUrl.isNullOrEmpty()) {
-            mediaPath = downloadAttachment(attachmentUrl)
+        // Show what was fetched earlier. Nothing is downloaded here, so every
+        // phone that is listening reveals within the spread of the broadcast
+        // itself rather than the spread of six downloads.
+        if (text == CMD_REVEAL && attachment == null) {
+            if (!MessageStore.promoteStaged(this)) {
+                Log.w(TAG, "Reveal arrived with nothing staged — ignoring")
+                AckSender.send(this, "shown", -1, "nothing staged")
+                return
+            }
+            getSystemService(NotificationManager::class.java).cancel(NOTIF_ID_MESSAGE)
+            alertAndShow()
+            Log.i(TAG, "Revealed staged secret in ${System.currentTimeMillis() - recvAt}ms")
+            AckSender.send(this, "shown", System.currentTimeMillis() - recvAt)
+            return
         }
+
         val name = attachment?.optString("name") ?: ""
+        val hasMedia = !attachmentUrl.isNullOrEmpty()
         // ntfy sometimes auto-fills `message` when there is an attachment and no
         // explicit user-entered text (e.g. "clip.mp4" or "You received a file: clip.mp4").
         // If the message appears to be an auto-filled filename/placeholder or is blank,
         // treat it as empty so nothing is shown on the phone when only an asset is sent.
-        val displayText = if (mediaPath != null && (
+        val displayText = if (hasMedia && (
                 text.isBlank() ||
                 text == name ||
                 text == "You received a file: $name" ||
@@ -406,15 +462,50 @@ class PushService : Service() {
 
         val personId = 0 // secrets carry their own artwork; nobody is named
 
-        val lagMs = if (publishedAt > 0) System.currentTimeMillis() - publishedAt * 1000 else -1
-        Log.i(TAG, "Secret shown ${lagMs}ms after it was sent" +
-            (if (mediaPath != null) " (media included)" else ""))
+        // Fetch and hold. Nothing is shown and nothing sounds — this phone is
+        // being loaded ahead of the round, and the reveal comes separately.
+        if (title == Config.TITLE_PRELOAD) {
+            val staged = if (hasMedia) downloadAttachment(attachmentUrl!!, staging = true) else null
+            MessageStore.stageMessage(this, displayText, staged, mime)
+            val ms = System.currentTimeMillis() - recvAt
+            Log.i(TAG, "Preloaded in ${ms}ms, waiting for reveal")
+            AckSender.send(this, "ready", ms, if (staged == null && hasMedia) "download failed" else "")
+            return
+        }
 
-        MessageStore.saveMessage(this, displayText, mediaPath, mime, personId)
-        // Only skip the notification when the viewer is demonstrably already on
-        // screen; otherwise post it, because its full-screen intent is the only
-        // sanctioned way to surface over the keyguard when the phone is folded
-        // or locked.
+        val lagMs = if (publishedAt > 0) System.currentTimeMillis() - publishedAt * 1000 else -1
+        Log.i(TAG, "Secret alerted ${lagMs}ms after it was sent" +
+            (if (hasMedia) " (media still downloading)" else ""))
+
+        // Alert first, download second. The cover screen shows a teaser that is
+        // baked into the app, so the bytes are not needed to tell anyone a
+        // secret has arrived — and there are seconds of human time between the
+        // chime and the phone being unfolded for the picture to land in. Doing
+        // it the other way round made each phone chime in proportion to its own
+        // download speed, which is what pulled six of them minutes apart.
+        MessageStore.saveMessage(this, displayText, null, mime, personId, mediaPending = hasMedia)
+        val serial = MessageStore.getSerial(this)
+        alertAndShow()
+        AckSender.send(this, "shown", System.currentTimeMillis() - recvAt)
+
+        if (hasMedia) {
+            mediaExecutor.execute {
+                val path = downloadAttachment(attachmentUrl!!)
+                MessageStore.attachMedia(this, serial, path)
+                val ms = System.currentTimeMillis() - recvAt
+                Log.i(TAG, "Media ready ${ms}ms after arrival")
+                AckSender.send(this, "ready", ms, if (path == null) "download failed" else "")
+            }
+        }
+    }
+
+    /**
+     * Put the viewer on the active display and make a noise. Only skip the
+     * notification when the viewer is demonstrably already on screen; otherwise
+     * post it, because its full-screen intent is the only sanctioned way to
+     * surface over the keyguard when the phone is folded or locked.
+     */
+    private fun alertAndShow() {
         launchViewer()
         handler.postDelayed({
             if (MainActivity.isOnScreen) {
@@ -468,7 +559,7 @@ class PushService : Service() {
     /** Raw bytes of an attachment, for things cached in memory rather than shown. */
     private fun downloadBytes(url: String): ByteArray? = try {
         val request = Request.Builder().url(url).withAuth().build()
-        client.newCall(request).execute().use { response ->
+        downloadClient.newCall(request).execute().use { response ->
             if (response.isSuccessful) response.body?.bytes() else null
         }
     } catch (e: Exception) {
@@ -476,13 +567,19 @@ class PushService : Service() {
         null
     }
 
-    private fun downloadAttachment(url: String): String? {
+    /**
+     * @param staging when true the file lands in its own directory, held for a
+     *   later reveal. It must not share a directory with the live message: each
+     *   download wipes its own directory first, so a staged secret kept beside
+     *   the live one would be deleted by the next thing to arrive.
+     */
+    private fun downloadAttachment(url: String, staging: Boolean = false): String? {
         val startedAt = System.currentTimeMillis()
         return try {
             val request = Request.Builder().url(url).withAuth().build()
-            client.newCall(request).execute().use { response ->
+            downloadClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
-                val dir = File(filesDir, "messages").apply { mkdirs() }
+                val dir = File(filesDir, if (staging) "staged" else "messages").apply { mkdirs() }
                 // keep only the latest image
                 dir.listFiles()?.forEach { it.delete() }
                 val file = File(dir, "img_${System.currentTimeMillis()}")

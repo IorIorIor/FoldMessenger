@@ -648,9 +648,10 @@ function renderAcks() {
   if (!ackVisible) { box.innerHTML = ""; return; }
   // Every targeted phone gets a row straight away, so pressing the button
   // visibly does something before any phone has had time to answer.
+  // Only the phones this round was aimed at. The reveal goes to every handset,
+  // so the ones that were never loaded answer "nothing staged" - which is them
+  // behaving correctly, not a fault, and listing it reads as six problems.
   const rows = expectedList.map(p => [p, acks.get(p) || {}]);
-  for (const [p, a] of acks) if (!expectedList.includes(p)) rows.push([p, a]);
-  rows.sort((a, b) => a[0] - b[0]);
   const ready = rows.filter(([, a]) => a.ready !== undefined);
 
   document.getElementById("reveal").disabled = ready.length < expectedPhones;

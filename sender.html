@@ -57,6 +57,16 @@
     border-radius: 8px; background: #fff; color: #111; cursor: pointer;
   }
   button:disabled { opacity: 0.5; cursor: default; }
+  .hint { color:#888; font-size:12px; margin:4px 0 10px; line-height:1.45; }
+  .hint.ok { color:#7c7; } .hint.err { color:#e77; }
+  #ackTable { margin-top:12px; }
+  #ackTable table { width:100%; border-collapse:collapse; font-size:14px; }
+  #ackTable th { color:#888; font-weight:500; padding-bottom:6px; font-size:12px;
+    text-transform:uppercase; letter-spacing:0.06em; }
+  #ackTable td { padding:7px 0; border-top:1px solid #333; }
+  #ackTable .waiting { color:#888; }
+  #ackTable .done { color:#7c7; font-weight:600; }
+  #ackTable .count { margin-top:8px; font-size:13px; }
   button.linkbtn {
     width: auto; margin-top: 10px; padding: 6px 10px; font-size: 13px; font-weight: 500;
     background: transparent; color: #e77; border: 1px solid #633; border-radius: 6px;
@@ -118,6 +128,16 @@
 </fieldset>
 
 <button id="send">Send</button>
+
+<fieldset>
+  <legend>Gelijktijdig onthullen</legend>
+  <p class="hint">Laad het secret eerst stil naar alle telefoons — er gebeurt dan
+    niets op de toestellen. Zodra ze allemaal klaar staan onthult één druk op de
+    knop ze tegelijk, want er hoeft niets meer gedownload te worden.</p>
+  <button id="preload" class="accent">📥 LAAD SECRET (stil)</button>
+  <button id="reveal" class="accent" disabled>✨ ONTHUL NU</button>
+  <div id="ackTable"></div>
+</fieldset>
 <button id="selfies" class="accent">📸 VRAAG SELFIES</button>
 <button id="finalq" class="accent">❓ SEND FINAL QUESTION</button>
 <button id="nextround" class="secondary">⏭ Next round — clear all phones</button>
@@ -315,7 +335,7 @@ function setFileInfo(file, detail = "") {
 function targets() {
   if (document.getElementById("all").checked) return [{ label: "All phones", topic: `${TOPIC_BASE}-all` }];
   return [...document.querySelectorAll(".phone:checked")]
-    .map(cb => ({ label: `Phone ${cb.value}`, topic: `${TOPIC_BASE}-p${cb.value}` }));
+    .map(cb => ({ label: `Phone ${cb.value}`, phone: Number(cb.value), topic: `${TOPIC_BASE}-p${cb.value}` }));
 }
 
 const log = document.getElementById("log");
@@ -346,27 +366,180 @@ document.getElementById("send").addEventListener("click", async () => {
       return;
     }
 
-    for (const t of to) {
-      try {
-        let res;
-        if (file) {
-          const headers = authHeaders({ "X-Filename": (file.name || "secret").replace(/[^\x20-\x7e]/g, "_") });
-          if (text) headers["X-Message"] = headerValue(text);
-          res = await fetch(`${SERVER}/${t.topic}`, { method: "PUT", body: file, headers });
-        } else {
-          res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text, headers: authHeaders() });
-        }
-        if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
-        else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");
-      } catch (e) {
-        addLog(`✗ ${t.label} — ${e.message}`, "err");
-      }
-    }
+    // In parallel: uploading to six phones one after another made the last one
+    // start its round a whole upload behind the first.
+    expectedList = phonesIn(to);
+    expectedPhones = expectedList.length;
+    startAckRound();
+    await Promise.all(to.map(t => publishTo(t, { file, text })));
   } finally {
     btn.disabled = false;
     btn.textContent = "Send";
   }
 });
+
+/** Which handsets a target list covers; "All phones" means every one of them. */
+function phonesIn(to) {
+  return to.some(t => !t.phone)
+    ? Array.from({ length: PHONE_COUNT }, (_, i) => i + 1)
+    : to.map(t => t.phone).sort((a, b) => a - b);
+}
+
+/** One publish to one phone. `title` marks a silent preload. */
+async function publishTo(t, { file, text, title }) {
+  try {
+    let res;
+    if (file) {
+      const headers = authHeaders({ "X-Filename": (file.name || "secret").replace(/[^\x20-\x7e]/g, "_") });
+      if (text) headers["X-Message"] = headerValue(text);
+      if (title) headers["X-Title"] = title;
+      res = await fetch(`${SERVER}/${t.topic}`, { method: "PUT", body: file, headers });
+    } else {
+      const headers = authHeaders();
+      if (title) headers["X-Title"] = title;
+      res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text, headers });
+    }
+    if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
+    else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");
+    return res.ok;
+  } catch (e) {
+    addLog(`✗ ${t.label} — ${e.message}`, "err");
+    return false;
+  }
+}
+
+// Load the secret onto every selected phone without showing it. The bytes move
+// now, so the reveal later carries nothing but the word "go".
+document.getElementById("preload").addEventListener("click", async () => {
+  const text = document.getElementById("text").value.trim();
+  const file = fileInput.files[0];
+  const to = targets();
+
+  // Refusals show up directly under the button. The log is at the foot of a long
+  // page, so a warning there reads as the button doing nothing at all.
+  const refuse = (msg) => {
+    addLog(`⚠ ${msg}`, "err");
+    document.getElementById("ackTable").innerHTML = `<p class="hint err">⚠ ${msg}</p>`;
+    ackVisible = false;
+  };
+  if (to.length === 0) return refuse("Kies eerst minstens één telefoon.");
+  if (!text && !file) return refuse("Kies eerst een afbeelding/video of typ een tekst.");
+  if (file && file.size > MAX_ATTACHMENT_BYTES) {
+    return refuse(`Bestand te groot — ${formatBytes(file.size)} is meer dan ${formatBytes(MAX_ATTACHMENT_BYTES)}.`);
+  }
+
+  const btn = document.getElementById("preload");
+  btn.disabled = true;
+  btn.textContent = "Laden…";
+  expectedList = phonesIn(to);
+  expectedPhones = expectedList.length;
+  startAckRound();
+  try {
+    await Promise.all(to.map(t => publishTo(t, { file, text, title: "preload" })));
+    addLog(`📥 Geladen naar ${to.length} — wachten tot ze klaar staan…`, "ok");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📥 LAAD SECRET (stil)";
+  }
+});
+
+// The reveal itself: a few bytes to every phone at once.
+document.getElementById("reveal").addEventListener("click", async () => {
+  startAckRound(true);
+  try {
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, {
+      method: "POST", body: "__REVEAL__", headers: authHeaders()
+    });
+    addLog(res.ok ? "✨ Onthuld." : `✗ Onthullen mislukt — HTTP ${res.status}`, res.ok ? "ok" : "err");
+  } catch (e) {
+    addLog(`✗ Onthullen mislukt — ${e.message}`, "err");
+  }
+});
+
+// ── What the phones report back ───────────────────────────────────────────────
+// Each phone says when it finished loading and when it alerted, with the elapsed
+// time measured on its own clock — so six handsets that disagree about the time
+// still give comparable numbers.
+const ACK_POLL_MS = 2000;
+const acks = new Map();
+let acksSince = 0;
+let acksPolling = false;
+let expectedPhones = PHONE_COUNT;
+let expectedList = [];
+let ackVisible = false;
+
+function startAckRound(keepReady) {
+  acksSince = Math.floor(Date.now() / 1000);
+  ackVisible = true;
+  if (keepReady) {
+    for (const [, a] of acks) { a.shown = undefined; a.shownAt = undefined; }
+  } else {
+    acks.clear();
+    document.getElementById("reveal").disabled = true;
+  }
+  renderAcks();
+  if (acksPolling) return;
+  acksPolling = true;
+  pollAcks();
+  setInterval(pollAcks, ACK_POLL_MS);
+}
+
+async function pollAcks() {
+  try {
+    const res = await fetch(
+      `${SERVER}/${TOPIC_BASE}-acks/json?poll=1&since=${acksSince || "1h"}`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) return;
+    const body = await res.text();
+    let changed = false;
+    for (const line of body.split("\n")) {
+      if (!line.trim()) continue;
+      let m; try { m = JSON.parse(line); } catch (_) { continue; }
+      if (m.event !== "message" || !m.message) continue;
+      let p; try { p = JSON.parse(m.message); } catch (_) { continue; }
+      if (typeof p.phone !== "number" || p.phone < 1 || p.phone > PHONE_COUNT) continue;
+      if (acksSince && (m.time || 0) < acksSince) continue;
+      const at = (m.time || 0) * 1000;
+      const entry = acks.get(p.phone) || {};
+      if (p.phase === "ready") { entry.ready = p.ms; entry.readyAt = at; entry.note = p.note; }
+      if (p.phase === "shown") { entry.shown = p.ms; entry.shownAt = at; entry.note = p.note; }
+      acks.set(p.phone, entry);
+      changed = true;
+    }
+    if (changed) renderAcks();
+  } catch (_) { /* offline; next tick */ }
+}
+
+function renderAcks() {
+  const box = document.getElementById("ackTable");
+  if (!ackVisible) { box.innerHTML = ""; return; }
+  // Every targeted phone gets a row straight away, waiting, so pressing the
+  // button visibly does something before any phone has had time to answer.
+  const rows = expectedList.map(p => [p, acks.get(p) || {}]);
+  for (const [p, a] of acks) if (!expectedList.includes(p)) rows.push([p, a]);
+  rows.sort((a, b) => a[0] - b[0]);
+  const ready = rows.filter(([, a]) => a.ready !== undefined);
+
+  document.getElementById("reveal").disabled = ready.length < expectedPhones;
+
+  let html = "<table><tr><th align='left'>Telefoon</th>" +
+    "<th align='right'>Geladen</th><th align='right'>Getoond</th></tr>";
+  for (const [phone, a] of rows) {
+    const name = (TABLES[activeTable - 1] || [])[phone - 1] || "";
+    const note = a.note ? ` <span class="err">${a.note}</span>` : "";
+    const cell = v => v === undefined
+      ? "<td align='right' class='waiting'>wachten…</td>"
+      : `<td align='right' class='done'>${v} ms</td>`;
+    html += `<tr><td>${phone}${name ? " " + name : ""}${note}</td>` +
+      cell(a.ready) + cell(a.shown) + "</tr>";
+  }
+  html += "</table>";
+  const allReady = ready.length >= expectedPhones;
+  html += `<p class="count ${allReady ? "ok" : "hint"}">${ready.length}/${expectedPhones} klaar` +
+    (allReady ? " — druk op ONTHUL NU" : "") + "</p>";
+  box.innerHTML = html;
+}
 
 // Admin: ask every phone for a fresh selfie at the start of a table's round.
 document.getElementById("selfies").addEventListener("click", async () => {
@@ -495,6 +668,7 @@ document.getElementById("nextround").addEventListener("click", async () => {
   if (!confirm("Start the next round? This clears the message on ALL phones.")) return;
   try {
     const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__NEXTROUND__", headers: authHeaders() });
+    acks.clear(); ackVisible = false; renderAcks();
     if (res.ok) {
       addLog(`✓ Next round — all phones cleared ${new Date().toLocaleTimeString()}`, "ok");
       startVoteRound();

@@ -57,16 +57,6 @@
     border-radius: 8px; background: #fff; color: #111; cursor: pointer;
   }
   button:disabled { opacity: 0.5; cursor: default; }
-  .hint { color:#888; font-size:12px; margin:4px 0 10px; line-height:1.45; }
-  .hint.ok { color:#7c7; } .hint.err { color:#e77; }
-  #ackTable { margin-top:12px; }
-  #ackTable table { width:100%; border-collapse:collapse; font-size:14px; }
-  #ackTable th { color:#888; font-weight:500; padding-bottom:6px; font-size:12px;
-    text-transform:uppercase; letter-spacing:0.06em; }
-  #ackTable td { padding:7px 0; border-top:1px solid #333; }
-  #ackTable .waiting { color:#888; }
-  #ackTable .done { color:#7c7; font-weight:600; }
-  #ackTable .count { margin-top:8px; font-size:13px; }
   button.linkbtn {
     width: auto; margin-top: 10px; padding: 6px 10px; font-size: 13px; font-weight: 500;
     background: transparent; color: #e77; border: 1px solid #633; border-radius: 6px;
@@ -128,20 +118,6 @@
 </fieldset>
 
 <button id="send">Send</button>
-
-<fieldset>
-  <legend>Gelijktijdig onthullen</legend>
-  <p class="hint">Laad het secret eerst stil naar alle telefoons. Zodra ze allemaal
-    klaar staan onthult één druk op de knop ze tegelijk — er hoeft dan niets meer
-    gedownload te worden.</p>
-  <button id="preload" class="accent">📥 LAAD SECRET (stil)</button>
-  <button id="reveal" class="accent" disabled>✨ ONTHUL NU</button>
-  <div id="ackTable"></div>
-</fieldset>
-
-<button id="uselocal" class="accent">📡 ZET TELEFOONS OP DEZE LAPTOP</button>
-<button id="usentfy" class="secondary">☁︎ Terug naar internet (ntfy)</button>
-<div id="laptopState" class="hint"></div>
 <button id="selfies" class="accent">📸 VRAAG SELFIES</button>
 <button id="finalq" class="accent">❓ SEND FINAL QUESTION</button>
 <button id="nextround" class="secondary">⏭ Next round — clear all phones</button>
@@ -155,12 +131,7 @@
 <script>
 // Must match Config.TOPIC_BASE in the Android app.
 const TOPIC_BASE = "fm-pw3h5q3z";
-
-// Opened from the laptop's own server, everything goes over the LAN and the
-// page already knows the address to hand the phones. Opened as a file, it falls
-// back to ntfy.sh exactly as before.
-const LOCAL = location.protocol.startsWith("http") && !location.host.endsWith("ntfy.sh");
-const SERVER = LOCAL ? location.origin : "https://ntfy.sh";
+const SERVER = "https://ntfy.sh";
 const PHONE_COUNT = 6;   // keep in sync with Config.PHONE_COUNT in the app
 
 // The ntfy token lifts the anonymous rate and bandwidth limits. It is kept in
@@ -229,7 +200,12 @@ async function selectTable(t) {
   paintTables();
   paintPhones();
 startResults();
-  await broadcast(`__TABLE__${t}`, `✓ Tafel ${t} actief`);
+  try {
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: `__TABLE__${t}`, headers: authHeaders() });
+    addLog(res.ok ? `✓ Tafel ${t} actief` : `✗ Tafel ${t} — HTTP ${res.status}`, res.ok ? "ok" : "err");
+  } catch (e) {
+    addLog(`✗ Tafel ${t} — ${e.message}`, "err");
+  }
 }
 paintTables();
 
@@ -316,10 +292,7 @@ function headerValue(text) {
   return words.join(" ");
 }
 
-// 25 MB is ntfy's ceiling on the Supporter tier, and it is a hard one — a larger
-// secret is rejected outright rather than arriving slowly. The laptop has no
-// such limit, so running locally is also what makes a long clip possible at all.
-const MAX_ATTACHMENT_BYTES = LOCAL ? 300 * 1024 * 1024 : 25 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;   // Supporter tier
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -335,14 +308,14 @@ function setFileInfo(file, detail = "") {
   const sizeText = formatBytes(file.size);
   const isTooLarge = file.size > MAX_ATTACHMENT_BYTES;
   const detailText = detail ? ` • ${detail}` : "";
-  el.textContent = `${file.name} • ${sizeText}${isTooLarge ? ` • exceeds the ${formatBytes(MAX_ATTACHMENT_BYTES)} limit` : ` • under the ${formatBytes(MAX_ATTACHMENT_BYTES)} limit`}${detailText}`;
+  el.textContent = `${file.name} • ${sizeText}${isTooLarge ? " • exceeds the 25 MB limit" : " • under the 25 MB limit"}${detailText}`;
   el.className = isTooLarge ? "err" : "ok";
 }
 
 function targets() {
   if (document.getElementById("all").checked) return [{ label: "All phones", topic: `${TOPIC_BASE}-all` }];
   return [...document.querySelectorAll(".phone:checked")]
-    .map(cb => ({ label: `Phone ${cb.value}`, phone: Number(cb.value), topic: `${TOPIC_BASE}-p${cb.value}` }));
+    .map(cb => ({ label: `Phone ${cb.value}`, topic: `${TOPIC_BASE}-p${cb.value}` }));
 }
 
 const log = document.getElementById("log");
@@ -367,321 +340,62 @@ document.getElementById("send").addEventListener("click", async () => {
 
   try {
     if (file && file.size > MAX_ATTACHMENT_BYTES) {
-      addLog(`⚠ Bestand te groot — ${formatBytes(file.size)} is meer dan ${formatBytes(MAX_ATTACHMENT_BYTES)}.`, "err");
+      addLog(`⚠ Bestand te groot — ${formatBytes(file.size)} is meer dan 25 MB.`, "err");
       btn.disabled = false;
       btn.textContent = "Send";
       return;
     }
 
-    // In parallel: uploading to six phones one after another made the last one
-    // start its round a whole upload behind the first.
-    expectedList = to.some(t => !t.phone)
-    ? Array.from({ length: PHONE_COUNT }, (_, i) => i + 1)   // "All phones"
-    : to.map(t => t.phone).sort((a, b) => a - b);
-  expectedPhones = expectedList.length;
-    startAckRound();
-    await Promise.all(to.map(t => publishTo(t, { file, text })));
+    for (const t of to) {
+      try {
+        let res;
+        if (file) {
+          const headers = authHeaders({ "X-Filename": (file.name || "secret").replace(/[^\x20-\x7e]/g, "_") });
+          if (text) headers["X-Message"] = headerValue(text);
+          res = await fetch(`${SERVER}/${t.topic}`, { method: "PUT", body: file, headers });
+        } else {
+          res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text, headers: authHeaders() });
+        }
+        if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
+        else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");
+      } catch (e) {
+        addLog(`✗ ${t.label} — ${e.message}`, "err");
+      }
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = "Send";
   }
 });
 
-/**
- * Send a command to every phone, over the laptop *and* over ntfy.
- *
- * A handset only ever listens to one of the two, and which one it picked depends
- * on whether it could see the laptop the last time it reconnected — so a fleet
- * can end up split without anyone noticing. Publishing a command to one server
- * would then reach only some of the phones, which for a reveal is the worst
- * possible failure. Commands are a few bytes, so sending both ways costs
- * nothing, and a phone on one server simply never sees the other copy.
- */
-async function broadcast(command, label) {
-  const servers = [SERVER];
-  if (SERVER !== "https://ntfy.sh") servers.push("https://ntfy.sh");
-  const results = await Promise.all(servers.map(async s => {
-    try {
-      const res = await fetch(`${s}/${TOPIC_BASE}-all`, {
-        method: "POST", body: command, headers: authHeaders()
-      });
-      return res.ok;
-    } catch (_) { return false; }
-  }));
-  // Report per server. Saying "sent" because the laptop accepted it is useless
-  // when the phones are listening to ntfy: you press the button, see a tick, and
-  // nothing happens, over and over.
-  const reached = servers.filter((_, i) => results[i]);
-  const failed = servers.filter((_, i) => !results[i]);
-  const ok = reached.length > 0;
-  const name = s => s.includes("ntfy.sh") ? "ntfy" : "laptop";
-  addLog(
-    ok ? `${label} — via ${reached.map(name).join(" + ")}` +
-         (failed.length ? ` (${failed.map(name).join(" + ")} onbereikbaar)` : "")
-       : `✗ ${label} — geen enkele server bereikbaar`,
-    failed.length ? "err" : "ok"
-  );
-  return ok;
-}
-
-/** One publish to one phone. `title` marks a silent preload. */
-async function publishTo(t, { file, text, title }) {
-  try {
-    let res;
-    if (file) {
-      const headers = authHeaders({ "X-Filename": (file.name || "secret").replace(/[^\x20-\x7e]/g, "_") });
-      if (text) headers["X-Message"] = headerValue(text);
-      if (title) headers["X-Title"] = title;
-      res = await fetch(`${SERVER}/${t.topic}`, { method: "PUT", body: file, headers });
-    } else {
-      const headers = authHeaders();
-      if (title) headers["X-Title"] = title;
-      res = await fetch(`${SERVER}/${t.topic}`, { method: "POST", body: text, headers });
-    }
-    if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
-    else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");
-    return res.ok;
-  } catch (e) {
-    addLog(`✗ ${t.label} — ${e.message}`, "err");
-    return false;
-  }
-}
-
-// Load the secret onto every selected phone without showing it. The bytes move
-// now, so the reveal later carries nothing but the word "go".
-document.getElementById("preload").addEventListener("click", async () => {
-  const text = document.getElementById("text").value.trim();
-  const file = fileInput.files[0];
-  const to = targets();
-
-  // Refusals show up directly under the button. The log is at the foot of a long
-  // page, so a warning there reads as the button doing nothing at all.
-  const refuse = (msg) => {
-    addLog(`⚠ ${msg}`, "err");
-    document.getElementById("ackTable").innerHTML = `<p class="hint err">⚠ ${msg}</p>`;
-    ackVisible = false;
-  };
-  if (to.length === 0) return refuse("Kies eerst minstens één telefoon.");
-  if (!text && !file) return refuse("Kies eerst een afbeelding/video of typ een tekst.");
-  if (file && file.size > MAX_ATTACHMENT_BYTES) {
-    return refuse(`Bestand te groot — ${formatBytes(file.size)} is meer dan ${formatBytes(MAX_ATTACHMENT_BYTES)}.`);
-  }
-
-  const btn = document.getElementById("preload");
-  btn.disabled = true;
-  btn.textContent = "Laden…";
-  expectedList = to.some(t => !t.phone)
-    ? Array.from({ length: PHONE_COUNT }, (_, i) => i + 1)   // "All phones"
-    : to.map(t => t.phone).sort((a, b) => a - b);
-  expectedPhones = expectedList.length;
-  startAckRound();
-  try {
-    await Promise.all(to.map(t => publishTo(t, { file, text, title: "preload" })));
-    addLog(`📥 Geladen naar ${to.length} — wachten tot ze klaar staan…`, "ok");
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "📥 LAAD SECRET (stil)";
-  }
-});
-
-// The reveal itself: a few bytes to every phone at once.
-document.getElementById("reveal").addEventListener("click", async () => {
-  startAckRound(true);
-  await broadcast("__REVEAL__", "✨ Onthuld");
-});
-
-// ── What the phones report back ───────────────────────────────────────────────
-// Each phone says when it finished loading and when it alerted, with the elapsed
-// time measured on its own clock — so six handsets that disagree about the time
-// still give comparable numbers. How far apart they were comes from the arrival
-// times the server stamps, not from the phones.
-const ACK_POLL_MS = 2000;
-const acks = new Map();        // phone -> { ready, shown, readyAt, shownAt }
-let acksSince = 0;
-let acksPolling = false;
-let expectedPhones = PHONE_COUNT;
-let expectedList = [];         // phones targeted this round, shown as rows immediately
-let ackVisible = false;
-
-function startAckRound(keepReady) {
-  acksSince = Math.floor(Date.now() / 1000);
-  ackVisible = true;
-  if (keepReady) {
-    for (const [, a] of acks) { a.shown = undefined; a.shownAt = undefined; }
-  } else {
-    acks.clear();
-    document.getElementById("reveal").disabled = true;
-  }
-  renderAcks();
-  if (acksPolling) return;
-  acksPolling = true;
-  pollAcks();
-  setInterval(pollAcks, ACK_POLL_MS);
-}
-
-/**
- * Read a topic from both servers. Phones report to whichever one they are on,
- * and a split fleet would otherwise leave half the answers invisible — which is
- * how the closing question's picks went missing before.
- */
-async function pollBoth(topic, since) {
-  const servers = [SERVER];
-  if (SERVER !== "https://ntfy.sh") servers.push("https://ntfy.sh");
-  const bodies = await Promise.all(servers.map(async s => {
-    try {
-      const res = await fetch(`${s}/${topic}/json?poll=1&since=${since}`, { headers: authHeaders() });
-      return res.ok ? await res.text() : "";
-    } catch (_) { return ""; }
-  }));
-  return bodies.join("\n");
-}
-
-async function pollAcks() {
-  try {
-    const body = await pollBoth(`${TOPIC_BASE}-acks`, acksSince || "1h");
-    let changed = false;
-    for (const line of body.split("\n")) {
-      if (!line.trim()) continue;
-      let m; try { m = JSON.parse(line); } catch (_) { continue; }
-      if (m.event !== "message" || !m.message) continue;
-      let p; try { p = JSON.parse(m.message); } catch (_) { continue; }
-      if (typeof p.phone !== "number" || p.phone < 1 || p.phone > PHONE_COUNT) continue;
-      if (acksSince && (m.time || 0) < acksSince) continue;
-      // timeMs is stamped by the laptop server; ntfy only gives whole seconds
-      const at = m.timeMs || (m.time || 0) * 1000;
-      const entry = acks.get(p.phone) || {};
-      if (p.phase === "ready") { entry.ready = p.ms; entry.readyAt = at; entry.note = p.note; }
-      if (p.phase === "shown") { entry.shown = p.ms; entry.shownAt = at; entry.note = p.note; }
-      acks.set(p.phone, entry);
-      changed = true;
-    }
-    if (changed) renderAcks();
-  } catch (_) { /* offline; next tick */ }
-}
-
-function renderAcks() {
-  const box = document.getElementById("ackTable");
-  if (!ackVisible) { box.innerHTML = ""; return; }
-  // Every targeted phone gets a row straight away, waiting, so pressing the
-  // button visibly does something before any phone has had time to answer.
-  const rows = expectedList.map(p => [p, acks.get(p) || {}]);
-  for (const [p, a] of acks) if (!expectedList.includes(p)) rows.push([p, a]);
-  rows.sort((a, b) => a[0] - b[0]);
-  const ready = rows.filter(([, a]) => a.ready !== undefined);
-  const shownAt = rows.map(([, a]) => a.shownAt).filter(Boolean);
-  const spread = shownAt.length > 1 ? Math.max(...shownAt) - Math.min(...shownAt) : null;
-
-  document.getElementById("reveal").disabled = ready.length < expectedPhones;
-
-  let html = "<table><tr><th align='left'>Telefoon</th>" +
-    "<th align='right'>Geladen</th><th align='right'>Getoond</th></tr>";
-  for (const [phone, a] of rows) {
-    const name = (TABLES[activeTable - 1] || [])[phone - 1] || "";
-    const note = a.note ? ` <span class="err">${a.note}</span>` : "";
-    const cell = v => v === undefined
-      ? `<td align='right' class='waiting'>wachten…</td>`
-      : `<td align='right' class='done'>${v} ms</td>`;
-    html += `<tr><td>${phone}${name ? " " + name : ""}${note}</td>` +
-      cell(a.ready) + cell(a.shown) + "</tr>";
-  }
-  html += "</table>";
-  const allReady = ready.length >= expectedPhones;
-  html += `<p class="count ${allReady ? "ok" : "hint"}">` +
-    `${ready.length}/${expectedPhones} klaar` +
-    (allReady ? " — druk op ONTHUL NU" : "") +
-    (spread !== null ? ` · onthulling ${spread} ms uit elkaar` : "") + "</p>";
-  box.innerHTML = html;
-}
-
-// Point the phones at this laptop. Sent over whichever channel is working now —
-// over ntfy the first time, so the phones can be told where to go without
-// anyone touching them.
-// The address to hand the phones is the laptop's address on the Wi-Fi, which is
-// not necessarily the one this page was opened at: open it at localhost and
-// location.origin is "http://localhost:8080", which on a phone means the phone
-// itself. So the server is asked what it is actually reachable as.
-let laptopBase = null;
-
-async function findLaptopBase() {
-  if (!LOCAL) return null;
-  try {
-    const res = await fetch(`${location.origin}/health`);
-    if (!res.ok) return null;
-    const body = await res.json();
-    laptopBase = body.base || null;
-  } catch (_) { laptopBase = null; }
-  paintLaptopBase();
-  return laptopBase;
-}
-
-function paintLaptopBase() {
-  const el = document.getElementById("laptopState");
-  if (!el) return;
-  if (!LOCAL) {
-    el.textContent = "Deze pagina draait niet op de laptop-server — open http://<laptop-ip>:8080";
-    el.className = "hint err";
-  } else if (!laptopBase) {
-    el.textContent = "Laptop-adres onbekend — server niet bereikbaar?";
-    el.className = "hint err";
-  } else if (/^https?:\/\/(localhost|127\.|\[?::1)/i.test(laptopBase)) {
-    el.textContent = `⚠ De laptop ziet zichzelf als ${laptopBase} — niet op Wi-Fi? De telefoons kunnen dat adres niet bereiken.`;
-    el.className = "hint err";
-  } else {
-    el.textContent = `Telefoons gaan naar ${laptopBase}`;
-    el.className = "hint ok";
-  }
-}
-
-document.getElementById("uselocal").addEventListener("click", async () => {
-  if (!LOCAL) {
-    addLog("⚠ Open deze pagina vanaf de laptop-server (http://<laptop-ip>:8080) om dit te gebruiken.", "err");
-    return;
-  }
-  const base = laptopBase || await findLaptopBase();
-  if (!base) {
-    addLog("⚠ Kan het adres van de laptop niet bepalen — draait de server nog?", "err");
-    return;
-  }
-  if (/^https?:\/\/(localhost|127\.|\[?::1)/i.test(base)) {
-    addLog(`⚠ De laptop ziet zichzelf alleen als ${base}. Dat adres wijst op een telefoon naar de telefoon zelf. Sluit de laptop aan op de Wi-Fi en probeer opnieuw.`, "err");
-    return;
-  }
-  await broadcastServer(base, `telefoons op ${base}`);
-});
-
-findLaptopBase();
-
-document.getElementById("usentfy").addEventListener("click", async () => {
-  await broadcastServer("off", "telefoons terug op ntfy");
-});
-
-async function broadcastServer(value, label) {
-  const body = `__SERVER__${value}`;
-  // tell them over both channels: whichever one a phone is on right now wins
-  const targets = [`${SERVER}/${TOPIC_BASE}-all`];
-  if (SERVER !== "https://ntfy.sh") targets.push(`https://ntfy.sh/${TOPIC_BASE}-all`);
-  let ok = false;
-  for (const url of targets) {
-    try {
-      const res = await fetch(url, { method: "POST", body, headers: authHeaders() });
-      ok = ok || res.ok;
-    } catch (e) { /* the other channel may still get through */ }
-  }
-  addLog(ok ? `✓ ${label}` : `✗ ${label} — mislukt`, ok ? "ok" : "err");
-}
-
 // Admin: ask every phone for a fresh selfie at the start of a table's round.
 document.getElementById("selfies").addEventListener("click", async () => {
   if (!confirm("Alle telefoons om een selfie vragen?")) return;
-  await broadcast("__SELFIE__", `✓ Selfies gevraagd ${new Date().toLocaleTimeString()}`);
+  try {
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, {
+      method: "POST", body: "__SELFIE__", headers: authHeaders()
+    });
+    addLog(res.ok ? `✓ Selfies gevraagd ${new Date().toLocaleTimeString()}`
+                  : `✗ Selfies — HTTP ${res.status}`, res.ok ? "ok" : "err");
+  } catch (e) {
+    addLog(`✗ Selfies — ${e.message}`, "err");
+  }
 });
 
 // Admin: put every phone into the closing question, and watch the answers land.
 document.getElementById("finalq").addEventListener("click", async () => {
   if (!confirm("Send the final question to ALL phones?")) return;
-  if (await broadcast("__FINALQUESTION__", `✓ Final question sent ${new Date().toLocaleTimeString()}`)) {
-    startVoteRound();
-    startResults();
+  try {
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__FINALQUESTION__", headers: authHeaders() });
+    if (res.ok) {
+      addLog(`✓ Final question sent ${new Date().toLocaleTimeString()}`, "ok");
+      startVoteRound();
+      startResults();
+    } else {
+      addLog(`✗ Final question — HTTP ${res.status}`, "err");
+    }
+  } catch (e) {
+    addLog(`✗ Final question — ${e.message}`, "err");
   }
 });
 
@@ -720,7 +434,12 @@ function startVoteRound() {
 async function pollVotes() {
   try {
     const since = votesSince || VOTE_LOOKBACK;
-    const text = await pollBoth(`${TOPIC_BASE}-votes`, since);
+    const res = await fetch(
+      `${SERVER}/${TOPIC_BASE}-votes/json?poll=1&since=${since}`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) return;
+    const text = await res.text();
     let changed = false;
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
@@ -774,11 +493,16 @@ function renderResults() {
 // "__NEXTROUND__" is a control command understood by the app, not shown as a message.
 document.getElementById("nextround").addEventListener("click", async () => {
   if (!confirm("Start the next round? This clears the message on ALL phones.")) return;
-  if (await broadcast("__NEXTROUND__", `✓ Next round — all phones cleared ${new Date().toLocaleTimeString()}`)) {
-    startVoteRound();
+  try {
+    const res = await fetch(`${SERVER}/${TOPIC_BASE}-all`, { method: "POST", body: "__NEXTROUND__", headers: authHeaders() });
+    if (res.ok) {
+      addLog(`✓ Next round — all phones cleared ${new Date().toLocaleTimeString()}`, "ok");
+      startVoteRound();
+    }
+    else addLog(`✗ Next round — HTTP ${res.status}`, "err");
+  } catch (e) {
+    addLog(`✗ Next round — ${e.message}`, "err");
   }
-  acks.clear();
-  renderAcks();
 });
 </script>
 </body>

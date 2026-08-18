@@ -23,7 +23,4 @@
     <string name="selfie_failed">Versturen mislukt — probeer opnieuw</string>
     <string name="no_camera">Geen camera-app gevonden</string>
     <string name="pick_phone_again">Kies opnieuw een telefoonnummer</string>
-    <string name="server_laptop">laptop %1$s</string>
-    <string name="server_internet">internet (ntfy)</string>
-    <string name="server_searching">zoekt laptop…</string>
 </resources>

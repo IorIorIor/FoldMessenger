@@ -23,13 +23,6 @@ object MessageStore {
     private const val KEY_TABLE = "active_table"
     private const val KEY_FINAL_Q = "final_question"
     private const val KEY_SELFIE = "selfie_mode"
-    private const val KEY_LOCAL_SERVER = "local_server"
-    private const val KEY_ACTIVE_SERVER = "active_server"
-    private const val KEY_PENDING = "media_pending"
-    private const val KEY_SERIAL = "message_serial"
-    private const val KEY_STAGED_TEXT = "staged_text"
-    private const val KEY_STAGED_IMAGE = "staged_image_path"
-    private const val KEY_STAGED_MIME = "staged_mime"
 
     @Volatile
     var onMessageChanged: (() -> Unit)? = null
@@ -78,20 +71,6 @@ object MessageStore {
         Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
     }
 
-    /** Address of the laptop, learned from an admin broadcast; null until then. */
-    fun getLocalServer(ctx: Context): String? = prefs(ctx).getString(KEY_LOCAL_SERVER, null)
-
-    fun setLocalServer(ctx: Context, base: String?) {
-        prefs(ctx).edit().putString(KEY_LOCAL_SERVER, base).apply()
-    }
-
-    /** Whichever server the last connection actually used. */
-    fun getActiveServer(ctx: Context): String? = prefs(ctx).getString(KEY_ACTIVE_SERVER, null)
-
-    fun setActiveServer(ctx: Context, base: String) {
-        prefs(ctx).edit().putString(KEY_ACTIVE_SERVER, base).apply()
-    }
-
     /** True while this phone has been asked for a selfie. */
     fun isSelfieMode(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_SELFIE, false)
 
@@ -105,10 +84,7 @@ object MessageStore {
 
     fun startFinalQuestion(ctx: Context) {
         getLastMessage(ctx)?.mediaPath?.let { File(it).delete() }
-        clearStaged(ctx)
         prefs(ctx).edit()
-            .putBoolean(KEY_PENDING, false)
-            .putLong(KEY_SERIAL, prefs(ctx).getLong(KEY_SERIAL, 0L) + 1)
             .putBoolean(KEY_FINAL_Q, true)
             .putBoolean(KEY_SELFIE, false)
             .remove(KEY_TEXT).remove(KEY_IMAGE).remove(KEY_MIME)
@@ -135,101 +111,8 @@ object MessageStore {
         )
     }
 
-    /**
-     * True when a secret is on screen but its picture or clip is still coming
-     * down. The phone is alerted before the bytes arrive — waiting for them is
-     * what used to make six handsets chime at six different moments — so the
-     * viewer holds on the teaser until this clears rather than popping the image
-     * in halfway through a reveal.
-     */
-    fun isMediaPending(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_PENDING, false)
-
-    /**
-     * Counts secrets, so a download that finishes late can tell whether the
-     * message it belongs to is still the one on screen. Media arrives on its own
-     * thread, so by the time it lands the round may have moved on.
-     */
-    fun getSerial(ctx: Context): Long = prefs(ctx).getLong(KEY_SERIAL, 0L)
-
-    /** Attach media to the message identified by [serial]; a no-op if it has been superseded. */
-    fun attachMedia(ctx: Context, serial: Long, mediaPath: String?) {
-        val p = prefs(ctx)
-        if (p.getLong(KEY_SERIAL, 0L) != serial) {
-            File(mediaPath ?: "").delete()
-            return
-        }
-        p.edit()
-            .putString(KEY_IMAGE, mediaPath)
-            .putBoolean(KEY_PENDING, false)
-            .apply()
-        Handler(Looper.getMainLooper()).post { onMessageChanged?.invoke() }
-    }
-
-    /**
-     * Hold a secret without showing it. Kept in its own slot and its own
-     * directory so the live message — and the wipe that precedes each download —
-     * cannot disturb it while it waits for the reveal.
-     */
-    fun stageMessage(ctx: Context, text: String, mediaPath: String?, mime: String) {
-        prefs(ctx).getString(KEY_STAGED_IMAGE, null)
-            ?.takeIf { it != mediaPath }?.let { File(it).delete() }
+    fun saveMessage(ctx: Context, text: String, mediaPath: String?, mime: String, personId: Int) {
         prefs(ctx).edit()
-            .putString(KEY_STAGED_TEXT, text)
-            .putString(KEY_STAGED_IMAGE, mediaPath)
-            .putString(KEY_STAGED_MIME, mime)
-            .apply()
-    }
-
-    fun hasStaged(ctx: Context): Boolean = prefs(ctx).contains(KEY_STAGED_TEXT)
-
-    /**
-     * Promote the held secret to the live one. The media is already on disk, so
-     * this is a rename and a preferences write — fast enough that every phone
-     * reveals on the same beat.
-     *
-     * @return false if nothing was staged, so the caller can fall back.
-     */
-    fun promoteStaged(ctx: Context): Boolean {
-        val p = prefs(ctx)
-        if (!p.contains(KEY_STAGED_TEXT)) return false
-        val text = p.getString(KEY_STAGED_TEXT, "") ?: ""
-        val mime = p.getString(KEY_STAGED_MIME, "") ?: ""
-        val stagedPath = p.getString(KEY_STAGED_IMAGE, null)
-
-        var livePath: String? = null
-        if (stagedPath != null) {
-            val staged = File(stagedPath)
-            val dir = File(ctx.filesDir, "messages").apply { mkdirs() }
-            dir.listFiles()?.forEach { it.delete() }
-            val target = File(dir, staged.name)
-            livePath = if (staged.renameTo(target)) target.absolutePath else stagedPath
-        }
-        p.edit()
-            .remove(KEY_STAGED_TEXT).remove(KEY_STAGED_IMAGE).remove(KEY_STAGED_MIME)
-            .apply()
-        saveMessage(ctx, text, livePath, mime, 0)
-        return true
-    }
-
-    /** Drop anything held without showing it (round over, or a plain send replaced it). */
-    fun clearStaged(ctx: Context) {
-        prefs(ctx).getString(KEY_STAGED_IMAGE, null)?.let { File(it).delete() }
-        prefs(ctx).edit()
-            .remove(KEY_STAGED_TEXT).remove(KEY_STAGED_IMAGE).remove(KEY_STAGED_MIME)
-            .apply()
-    }
-
-    fun saveMessage(
-        ctx: Context,
-        text: String,
-        mediaPath: String?,
-        mime: String,
-        personId: Int,
-        mediaPending: Boolean = false
-    ) {
-        prefs(ctx).edit()
-            .putBoolean(KEY_PENDING, mediaPending)
-            .putLong(KEY_SERIAL, prefs(ctx).getLong(KEY_SERIAL, 0L) + 1)
             // a new secret ends the closing question and any unfinished selfie:
             // the admin has moved on, and no phone should be left stranded
             .putBoolean(KEY_FINAL_Q, false)
@@ -254,12 +137,7 @@ object MessageStore {
     /** Wipe the current message (round over, or admin reset). */
     fun clear(ctx: Context) {
         getLastMessage(ctx)?.mediaPath?.let { File(it).delete() }
-        clearStaged(ctx)
         prefs(ctx).edit()
-            .putBoolean(KEY_PENDING, false)
-            // supersede any download still in flight, so it cannot land on the
-            // blank screen a moment after the round was cleared
-            .putLong(KEY_SERIAL, prefs(ctx).getLong(KEY_SERIAL, 0L) + 1)
             .remove(KEY_TEXT)
             .remove(KEY_IMAGE)
             .remove(KEY_MIME)

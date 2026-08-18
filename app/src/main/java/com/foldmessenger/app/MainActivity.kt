@@ -75,7 +75,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cardText: TextView
     private lateinit var coverTitle: TextView
     private lateinit var idleLabel: TextView
-    private lateinit var serverLabel: TextView
     private lateinit var finalGroup: View
     private lateinit var finalQuestionText: TextView
     private lateinit var voteGrid: GridLayout
@@ -156,7 +155,6 @@ class MainActivity : AppCompatActivity() {
         cardText = findViewById(R.id.card_text)
         coverTitle = findViewById(R.id.cover_title)
         idleLabel = findViewById(R.id.idle_label)
-        serverLabel = findViewById(R.id.server_label)
         finalGroup = findViewById(R.id.final_group)
         finalQuestionText = findViewById(R.id.final_question)
         voteGrid = findViewById(R.id.vote_grid)
@@ -295,10 +293,6 @@ class MainActivity : AppCompatActivity() {
         when {
             message == null -> showIdle(phoneId)
             isCover -> showTeaser()
-            // Unfolded before the picture landed: hold on the teaser rather than
-            // reveal an empty card and pop the artwork in a second later. It
-            // flips to the real thing the moment the media attaches.
-            message.mediaPath == null && MessageStore.isMediaPending(this) -> showTeaser()
             else -> showMessage(message)
         }
     }
@@ -324,17 +318,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
         idleLabel.visibility = View.VISIBLE
-
-        // What this handset is actually talking to, on the idle screen where the
-        // crew can read it. Without this the only way to tell a phone that found
-        // the laptop from one that did not is a USB cable, which is not a thing
-        // anyone has time for with six phones and an audience.
-        serverLabel.text = when (val server = MessageStore.getActiveServer(this)) {
-            null -> getString(R.string.server_searching)
-            Config.NTFY_SERVER -> getString(R.string.server_internet)
-            else -> getString(R.string.server_laptop, server.removePrefix("http://"))
-        }
-        serverLabel.visibility = View.VISIBLE
     }
 
     private fun showTeaser() {
@@ -342,7 +325,6 @@ class MainActivity : AppCompatActivity() {
         fx.show(FxBackground.NEW_REVEAL)
         cardContainer.visibility = View.GONE
         idleLabel.visibility = View.GONE
-        serverLabel.visibility = View.GONE
         coverTitle.visibility = View.VISIBLE
         // only on arrival at the teaser — a re-render (fold, resume) shouldn't
         // restart the typing
@@ -403,7 +385,6 @@ class MainActivity : AppCompatActivity() {
         stopTypingTitle()
         coverTitle.visibility = View.GONE
         idleLabel.visibility = View.GONE
-        serverLabel.visibility = View.GONE
         finalGroup.visibility = View.GONE
 
         val hasMedia = message.mediaPath != null
@@ -631,7 +612,6 @@ class MainActivity : AppCompatActivity() {
         finalGroup.visibility = View.GONE
         coverTitle.visibility = View.GONE
         idleLabel.visibility = View.GONE
-        serverLabel.visibility = View.GONE
         selfieGroup.visibility = View.VISIBLE
 
         if (selfieTaken) {
@@ -716,7 +696,6 @@ class MainActivity : AppCompatActivity() {
         stopTypingTitle()
         cardContainer.visibility = View.GONE
         idleLabel.visibility = View.GONE
-        serverLabel.visibility = View.GONE
         showingReveal = false
 
         if (isCover) {

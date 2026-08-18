@@ -1,8 +1,0 @@
-{
-  "name": "foldmessenger-server",
-  "version": "1.0.0",
-  "description": "Local stand-in for ntfy.sh, so the phones talk to the laptop on the venue Wi-Fi",
-  "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "dependencies": { "ws": "^8.18.0" }
-}

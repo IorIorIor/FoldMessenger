@@ -268,21 +268,6 @@
             android:textColor="@android:color/white"
             android:textSize="@dimen/idle_label_size"
             android:visibility="gone" />
-
-        <!-- which server this handset is on, so a phone that never found the
-             laptop is visible across the room rather than via a USB cable -->
-        <TextView
-            android:id="@+id/server_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_marginEnd="@dimen/idle_label_margin"
-            android:layout_marginBottom="@dimen/idle_label_margin"
-            android:alpha="0.4"
-            android:fontFamily="@font/samsung_sharp_sans_bold"
-            android:textColor="@android:color/white"
-            android:textSize="@dimen/idle_label_size"
-            android:visibility="gone" />
     </FrameLayout>
 
     <!-- First-run setup -->

@@ -38,7 +38,7 @@ object SelfieSender {
                 // its own message coming back around
                 Faces.save(ctx, table, seat, jpeg)
                 val request = Request.Builder()
-                    .url("${Servers.current(ctx)}/${Config.facesTopic()}")
+                    .url("${Config.NTFY_SERVER}/${Config.facesTopic()}")
                     .put(jpeg.toRequestBody())
                     .header("X-Filename", "face_t${table}_p$seat.jpg")
                     .header("X-Title", "face:$table:$seat")

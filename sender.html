@@ -204,12 +204,38 @@ function publishUrl(topic, extra = {}) {
   return `${SERVER}/${topic}${qs ? "?" + qs : ""}`;
 }
 
+/**
+ * Publish, waiting out ntfy's rate limit rather than losing the message to it.
+ *
+ * The limit is per account, not per address, so the six phones and this laptop
+ * all draw on one allowance: roughly seventeen requests in hand, refilling about
+ * six a minute. A round costs around twenty, so a busy moment produces HTTP 429
+ * - which is congestion, not failure. Left alone it silently skips a phone,
+ * which on the night looks exactly like a handset that has broken.
+ */
+async function publishRetrying(url, body, label) {
+  let waitMs = 1500;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let res;
+    try {
+      res = await fetch(url, { method: "POST", body });
+    } catch (e) {
+      if (attempt === 4) throw e;
+      await new Promise(r => setTimeout(r, waitMs));
+      waitMs = Math.min(waitMs * 2, 15000);
+      continue;
+    }
+    if (res.status !== 429) return res;
+    if (attempt === 0 && label) addLog(`⏳ ${label} — ntfy is druk, opnieuw…`, "hint");
+    await new Promise(r => setTimeout(r, waitMs));
+    waitMs = Math.min(waitMs * 2, 15000);
+  }
+  return { ok: false, status: 429 };
+}
+
 /** Publish a short command. Body is plain text, so no preflight. */
 function publishText(topic, body) {
-  return fetch(publishUrl(topic), {
-    method: "POST",
-    body: new Blob([body], { type: "text/plain" })
-  });
+  return publishRetrying(publishUrl(topic), new Blob([body], { type: "text/plain" }), "commando");
 }
 
 function paintToken() {
@@ -261,7 +287,6 @@ async function selectTable(t) {
   localStorage.setItem("fm_table", String(t));
   paintTables();
   paintPhones();
-startResults();
   try {
     const res = await publishText(`${TOPIC_BASE}-all`, `__TABLE__${t}`);
     addLog(res.ok ? `✓ Tafel ${t} actief` : `✗ Tafel ${t} — HTTP ${res.status}`, res.ok ? "ok" : "err");
@@ -270,6 +295,7 @@ startResults();
   }
 }
 paintTables();
+
 
 const phonesDiv = document.getElementById("phones");
 function paintPhones() {
@@ -413,7 +439,8 @@ document.getElementById("send").addEventListener("click", async () => {
     expectedList = phonesIn(to);
     expectedPhones = expectedList.length;
     startAckRound();
-    await Promise.all(to.map(t => publishTo(t, { file, text })));
+    await Promise.all(to.map((t, i) =>
+      new Promise(r => setTimeout(r, i * 400)).then(() => publishTo(t, { file, text }))));
   } finally {
     btn.disabled = false;
     btn.textContent = "Send";
@@ -435,15 +462,13 @@ async function publishTo(t, { file, text, title }) {
       const filename = (file.name || "secret").replace(/[^\x20-\x7e]/g, "_");
       // Blob retyped as text/plain purely to keep this a simple request; ntfy
       // stores the bytes untouched, which is verified byte-for-byte.
-      res = await fetch(publishUrl(t.topic, { title, filename, message: text || undefined }), {
-        method: "POST",
-        body: new Blob([file], { type: "text/plain" })
-      });
+      res = await publishRetrying(
+        publishUrl(t.topic, { title, filename, message: text || undefined }),
+        new Blob([file], { type: "text/plain" }), t.label);
     } else {
-      res = await fetch(publishUrl(t.topic, { title }), {
-        method: "POST",
-        body: new Blob([text], { type: "text/plain" })
-      });
+      res = await publishRetrying(
+        publishUrl(t.topic, { title }),
+        new Blob([text], { type: "text/plain" }), t.label);
     }
     if (res.ok) addLog(`✓ ${t.label} — sent ${new Date().toLocaleTimeString()}`, "ok");
     else addLog(`✗ ${t.label} — HTTP ${res.status}`, "err");
@@ -481,7 +506,10 @@ document.getElementById("preload").addEventListener("click", async () => {
   expectedPhones = expectedList.length;
   startAckRound();
   try {
-    await Promise.all(to.map(t => publishTo(t, { file, text, title: "preload" })));
+    // A small stagger: six uploads fired at the same instant is most of the
+    // allowance in one go, and the retry above then has to unpick it.
+    await Promise.all(to.map((t, i) =>
+      new Promise(r => setTimeout(r, i * 400)).then(() => publishTo(t, { file, text, title: "preload" }))));
     addLog(`📥 Geladen naar ${to.length} — wachten tot ze klaar staan…`, "ok");
   } finally {
     btn.disabled = false;
@@ -509,7 +537,7 @@ document.getElementById("reveal").addEventListener("click", async () => {
 // browser reports as "Failed to fetch" with nothing to say why. So the table
 // listens on one open connection instead, and polls only to catch up at the
 // start of a round and as a slow safety net if that connection dies.
-const ACK_POLL_MS = 15000;
+const ACK_POLL_MS = 30000;
 const acks = new Map();
 let acksSince = 0;
 let acksPolling = false;
@@ -528,7 +556,7 @@ function startAckRound(keepReady) {
   }
   renderAcks();
   pollAcks();          // catch up on anything already reported
-  openAckStream();
+  openStream();
   if (acksPolling) return;
   acksPolling = true;
   setInterval(pollAcks, ACK_POLL_MS);
@@ -539,18 +567,32 @@ function startAckRound(keepReady) {
  * what is published while it happens to be connected, so it is paired with the
  * catch-up poll above rather than trusted on its own.
  */
-let ackStream = null;
-function openAckStream() {
-  if (ackStream && ackStream.readyState !== 2) return;   // 2 = CLOSED
+let stream = null;
+let streamRetryMs = 2000;
+
+function openStream() {
+  if (stream && stream.readyState !== 2) return;   // 2 = CLOSED
   try {
-    ackStream = new EventSource(
-      `${SERVER}/${TOPIC_BASE}-acks/sse?since=${acksSince || "5m"}${authParam()}`
+    // Both topics on one connection. Two would cost two, and a browser only
+    // allows a handful of them to the same host in any case.
+    stream = new EventSource(
+      `${SERVER}/${TOPIC_BASE}-acks,${TOPIC_BASE}-votes/sse?since=${acksSince || "5m"}${authParam()}`
     );
-    ackStream.onmessage = (e) => {
-      try { if (absorbAck(JSON.parse(e.data))) renderAcks(); } catch (_) {}
+    stream.onopen = () => { streamRetryMs = 2000; };
+    stream.onmessage = (e) => {
+      let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+      if ((m.topic || "").endsWith("-acks")) { if (absorbAck(m)) renderAcks(); }
+      else if ((m.topic || "").endsWith("-votes")) { if (absorbVote(m)) renderResults(); }
     };
-    ackStream.onerror = () => { /* the safety poll covers it; it reconnects itself */ };
-  } catch (_) { /* polling still covers it */ }
+    stream.onerror = () => {
+      // EventSource retries on its own, and against a server answering 429 that
+      // becomes a loop that keeps it refused. Back off instead, and let the
+      // safety polls cover the gap.
+      stream.close();
+      setTimeout(openStream, streamRetryMs);
+      streamRetryMs = Math.min(streamRetryMs * 2, 60000);
+    };
+  } catch (_) { /* the polls still cover it */ }
 }
 
 /** @return true when the table changed. */
@@ -657,13 +699,18 @@ let votesPolling = false;
 function startResults() {
   document.getElementById("resultsBox").hidden = false;
   renderResults();
+  pollVotes();       // catch up on anything already cast
+  openStream();
   if (votesPolling) return;
   votesPolling = true;
-  pollVotes();
   setInterval(pollVotes, VOTE_POLL_MS);
 }
 
-const VOTE_POLL_MS = 5000;
+// Every five seconds was roughly ntfy's entire sustained allowance for one IP
+// address - and at a venue the six phones and the laptop share that address, so
+// their own reports were competing with this. The stream below carries answers
+// as they are cast; this is only the safety net behind it.
+const VOTE_POLL_MS = 30000;
 const VOTE_LOOKBACK = "6h";
 
 // Answers belong to the round that is running. Asking the question (or starting
@@ -671,11 +718,39 @@ const VOTE_LOOKBACK = "6h";
 // out of the topic history — including after a reload.
 let votesSince = Number(localStorage.getItem("fm_votes_since") || 0);
 
+// Picking a table used to start the answers panel - and its polling - which then
+// ran all evening, through every secret round, for a question that had not been
+// asked yet. It belongs to the closing question alone. A reload while that
+// question is live still restores it, so the operator does not lose the picks.
+// Declared here rather than at the top of the file: votesSince is a `let` below,
+// and reaching it early threw on load and took the whole page down with it.
+if (votesSince && Math.floor(Date.now() / 1000) - votesSince < 3600) {
+  setTimeout(startResults, 0);
+}
+
 function startVoteRound() {
   votesSince = Math.floor(Date.now() / 1000);
   localStorage.setItem("fm_votes_since", String(votesSince));
   answers.clear();
   renderResults();
+}
+
+/** @return true when the answers changed. */
+function absorbVote(m) {
+  if (m.event !== "message" || !m.message) return false;
+  let payload;
+  try { payload = JSON.parse(m.message); } catch (_) { return false; }
+  if (typeof payload.phone !== "number") return false;
+  if (payload.phone < 1 || payload.phone > PHONE_COUNT) return false;   // stray/test data
+  if (votesSince && (m.time || 0) < votesSince) return false;
+  // one answer per phone, the most recent wins
+  const prev = answers.get(payload.phone);
+  if (!prev || (m.time || 0) >= (prev._t || 0)) {
+    payload._t = m.time || 0;
+    answers.set(payload.phone, payload);
+    return true;
+  }
+  return false;
 }
 
 async function pollVotes() {
@@ -689,21 +764,8 @@ async function pollVotes() {
     let changed = false;
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
-      let m;
-      try { m = JSON.parse(line); } catch (_) { continue; }
-      if (m.event !== "message" || !m.message) continue;
-      let payload;
-      try { payload = JSON.parse(m.message); } catch (_) { continue; }
-      if (typeof payload.phone !== "number") continue;
-      if (payload.phone < 1 || payload.phone > PHONE_COUNT) continue;   // stray/test data
-      if (votesSince && (m.time || 0) < votesSince) continue;
-      // one answer per phone, the most recent wins
-      const prev = answers.get(payload.phone);
-      if (!prev || (m.time || 0) >= (prev._t || 0)) {
-        payload._t = m.time || 0;
-        answers.set(payload.phone, payload);
-        changed = true;
-      }
+      let m; try { m = JSON.parse(line); } catch (_) { continue; }
+      if (absorbVote(m)) changed = true;
     }
     if (changed) renderResults();
   } catch (e) {

@@ -9,27 +9,19 @@
 -->
 <resources>
     <string-array name="table_1_names">
-        <item>Ferry</item>
-        <item>Ferdi</item>
-        <item>Bart</item>
-        <item>Marieke</item>
-        <item>Natascha</item>
-        <item>Sam</item>
+        <item>Angeline</item>
+        <item>Anna</item>
+        <item>Viktorya</item>
+        <item>Gasser</item>
+        <item>Cristian</item>
+        <item>Stefano</item>
     </string-array>
     <string-array name="table_2_names">
-        <item>Vanja</item>
-        <item>Ali</item>
-        <item>Ben</item>
-        <item>Femke</item>
-        <item>Laura</item>
-        <item>Danique</item>
-    </string-array>
-    <string-array name="table_3_names">
-        <item>Jermaine</item>
-        <item>Xander</item>
-        <item>Romano</item>
-        <item>Jeroen</item>
-        <item>Lenny</item>
-        <item>Harald</item>
+        <item>Jorgos</item>
+        <item>Jens</item>
+        <item>Jochem</item>
+        <item>Alexandra</item>
+        <item>Veerle</item>
+        <item>Julie</item>
     </string-array>
 </resources>

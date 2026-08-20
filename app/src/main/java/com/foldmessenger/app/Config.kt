@@ -11,7 +11,7 @@ object Config {
     const val PHONE_COUNT = 6
 
     /** Tables of players, one in play at a time. Keep in sync with sender.html. */
-    const val TABLE_COUNT = 3
+    const val TABLE_COUNT = 2
 
     fun phoneTopic(id: Int) = "$TOPIC_BASE-p$id"
     fun allTopic() = "$TOPIC_BASE-all"

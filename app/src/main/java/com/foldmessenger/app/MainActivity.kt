@@ -130,8 +130,15 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        // Lock orientation to portrait for a consistent UI
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // Never rotate, whatever the phone is doing.
+        //
+        // SCREEN_ORIENTATION_PORTRAIT means "portrait with respect to gravity",
+        // so tilting an unfolded handset made Android turn the whole window to
+        // keep it that way — shader background and all — which reads as the app
+        // deciding to flip the content. NOSENSOR pins the activity to the
+        // display's own natural orientation and ignores the accelerometer
+        // entirely, on the cover screen and the inner one alike.
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_NOSENSOR
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)

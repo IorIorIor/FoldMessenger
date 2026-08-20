@@ -68,8 +68,13 @@ object MessageStore {
         prefs(ctx).edit().putInt(KEY_PHONE_ID, id).apply()
     }
 
-    /** Table currently in play; defaults to the first. */
-    fun getActiveTable(ctx: Context): Int = prefs(ctx).getInt(KEY_TABLE, 1)
+    /**
+     * Table currently in play; defaults to the first. Clamped, because a handset
+     * left on a table that a later build no longer has would look up an empty
+     * roster and show nobody at the closing question.
+     */
+    fun getActiveTable(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_TABLE, 1).coerceIn(1, Config.TABLE_COUNT)
 
     fun setActiveTable(ctx: Context, table: Int) {
         prefs(ctx).edit().putInt(KEY_TABLE, table).apply()

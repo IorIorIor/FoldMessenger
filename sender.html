@@ -56,7 +56,7 @@
     border-radius: 6px; padding: 10px; font-size: 15px;
   }
   #tokenState { margin-top: 8px; font-size: 13px; }
-  .tables { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; }
   .tables button {
     width: 100%; padding: 12px 8px; font-size: 15px; font-weight: 600;
     background: #1c1c1c; color: #eee; border: 1px solid #333; border-radius: 6px;
@@ -282,9 +282,8 @@ paintToken();
 // Tables of players, mirroring res/values/tables.xml in the app. Position in a
 // table's list is the phone number: the first name is on phone 1.
 const TABLES = [
-  ["Ferry", "Ferdi", "Bart", "Marieke", "Natascha", "Sam"],
-  ["Vanja", "Ali", "Ben", "Femke", "Laura", "Danique"],
-  ["Jermaine", "Xander", "Romano", "Jeroen", "Lenny", "Harald"],
+  ["Angeline", "Anna", "Viktorya", "Gasser", "Cristian", "Stefano"],
+  ["Jorgos", "Jens", "Jochem", "Alexandra", "Veerle", "Julie"],
 ];
 const TABLE_COUNT = TABLES.length;
 let activeTable = Number(localStorage.getItem("fm_table") || 1);
